@@ -1,0 +1,122 @@
+// Typed fetchers. Types mirrored from backend/src/types.ts and model outputs
+// (SPEC.md "API" + "API amendments", docs/MODEL.md section 4).
+
+export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number; src: "hl" | "bitstamp" };
+
+export type HtfPhase = "accumulation" | "expansion" | "euphoria" | "distribution" | "markdown" | "capitulation";
+
+export type LtfState =
+  | "insufficient_data"
+  | "deleveraging"
+  | "crowded_long"
+  | "short_squeeze_fuel"
+  | "crowded_short"
+  | "healthy_uptrend"
+  | "downtrend"
+  | "neutral";
+
+export type HtfPoint = Candle & {
+  sma200: number | null;
+  sma50: number | null;
+  mayer: number | null;
+  mayerPct: number | null;
+  drawdown: number | null;
+  sma200Slope30: number | null;
+  roc30: number | null;
+  roc365: number | null;
+  rv30: number | null;
+  rv30Pct: number | null;
+  daysSinceLow365: number;
+  tMayer: number | null;
+  tSlope: number | null;
+  tCross: number | null;
+  hMayer: number | null;
+  hDrawdown: number | null;
+  hRoc365: number | null;
+  trend: number | null;
+  heat: number | null;
+  rawPhase: HtfPhase | null;
+  phase: HtfPhase | null;
+};
+
+export type LtfPoint = Candle & {
+  ema50: number | null;
+  rsi14: number | null;
+  roc6: number | null;
+  fundingApr: number | null;
+  premium: number | null;
+  premiumZ: number | null;
+  oiUsd: number | null;
+  oiChange24h: number | null;
+  rv42: number | null;
+  rv42Pct: number | null;
+  lFunding: number | null;
+  lPremium: number | null;
+  lOi: number | null;
+  mEma: number | null;
+  mRsi: number | null;
+  mRoc: number | null;
+  leverage: number | null;
+  momentum: number | null;
+  rawState: LtfState;
+  state: LtfState;
+};
+
+export type CycleInfo = {
+  lastHalving: number | null;
+  daysSinceHalving: number | null;
+  cycleProgress: number | null;
+  nextHalvingEstimate: number;
+};
+
+export type Overview = {
+  asOf: number;
+  price: number;
+  lastRefresh: number;
+  htf: {
+    phase: HtfPhase | null;
+    trend: number | null;
+    heat: number | null;
+    features: Record<string, number | null>;
+    cycle: CycleInfo;
+  };
+  ltf: {
+    state: LtfState | null;
+    leverage: number | null;
+    momentum: number | null;
+    features: Record<string, number | null>;
+  };
+  composite: { bias: number | null; summary: string };
+  crossVenueFunding: { venue: string; apr: number }[];
+};
+
+export type Health = {
+  ok: boolean;
+  lastRefresh: number | null;
+  lastSnapshot: number | null;
+  firstSnapshot: number | null;
+  counts: { candles1d: number; candles4h: number; candles1h: number; funding: number; snapshots: number };
+};
+
+export type HtfResponse = { candles: HtfPoint[]; halvings: number[] };
+export type LtfResponse = { points: LtfPoint[] };
+
+export type Signal =
+  | { t: number; frame: "HTF"; from: HtfPhase | null; to: HtfPhase; price: number; trend: number | null; heat: number | null }
+  | { t: number; frame: "LTF"; from: LtfState | null; to: LtfState; price: number; leverage: number | null; momentum: number | null };
+
+export type SignalsResponse = { signals: Signal[] };
+
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+export const api = {
+  health: () => getJson<Health>("/api/health"),
+  overview: () => getJson<Overview>("/api/overview"),
+  htf: (interval: "1d" | "1w") => getJson<HtfResponse>(`/api/htf?interval=${interval}`),
+  ltf: (interval: "4h" | "1h") => getJson<LtfResponse>(`/api/ltf?interval=${interval}`),
+  signals: (frame: "HTF" | "LTF", limit = 200) => getJson<SignalsResponse>(`/api/signals?frame=${frame}&limit=${limit}`),
+};

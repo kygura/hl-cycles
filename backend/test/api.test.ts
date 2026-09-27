@@ -70,6 +70,7 @@ describe("GET /api/health", () => {
     expect(body).toHaveProperty("lastRefresh");
     expect(body).toHaveProperty("lastSnapshot");
     expect(body).toHaveProperty("firstSnapshot");
+    expect(body).toHaveProperty("lastError");
     expect(body.counts).toEqual(
       expect.objectContaining({
         candles1d: expect.any(Number),

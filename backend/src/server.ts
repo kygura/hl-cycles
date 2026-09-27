@@ -72,6 +72,7 @@ app.get("/api/health", async (c) => {
     lastRefresh: state.lastRefresh,
     lastSnapshot: state.lastSnapshot,
     firstSnapshot: state.firstSnapshot,
+    lastError: state.lastError,
     counts,
   });
 });

@@ -20,6 +20,19 @@ describe("fetchCandles", () => {
     expect(rows).toEqual([{ t: 1000, o: 10, h: 12, l: 9, c: 11, v: 1.5, src: "hl" }]);
   });
 
+  test("drops rows with NaN or non-numeric close, keeps valid rows", async () => {
+    const fetchImpl = (async () =>
+      jsonRes([
+        candleRow(1000, "1"),
+        { t: 1100, T: 4699, s: "BTC", i: "1h", o: "10", c: "abc", h: "12", l: "9", v: "1", n: 1 },
+        { t: 1200, T: 4799, s: "BTC", i: "1h", o: "10", c: "NaN", h: "12", l: "9", v: "1", n: 1 },
+        candleRow(1300, "2"),
+      ])) as unknown as typeof fetch;
+    const rows = await fetchCandles("BTC", "1h", 0, 2000, fetchImpl);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.t)).toEqual([1000, 1300]);
+  });
+
   test("paginates when a full page comes back, stops on short page", async () => {
     let calls = 0;
     const fetchImpl = (async () => {
@@ -139,6 +152,27 @@ describe("fetchBitstampDaily", () => {
       volume: "58.37",
     };
   }
+
+  test("drops rows with NaN or non-numeric close, keeps valid rows", async () => {
+    const day0 = 1315872000;
+    const todayStartSec = Math.floor(Date.now() / 1000 / 86400) * 86400;
+    const fetchImpl = (async () =>
+      jsonRes({
+        data: {
+          pair: "BTC/USD",
+          ohlc: [
+            ohlcRow(day0),
+            { timestamp: String(day0 + 86400), open: "5.80", high: "6.00", low: "5.65", close: "abc", volume: "58.37" },
+            { timestamp: String(day0 + 172800), open: "5.80", high: "6.00", low: "5.65", close: "NaN", volume: "58.37" },
+            ohlcRow(day0 + 259200),
+          ],
+        },
+      })) as unknown as typeof fetch;
+
+    const rows = await fetchBitstampDaily(day0, fetchImpl);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.t)).toEqual([day0 * 1000, (day0 + 259200) * 1000]);
+  });
 
   test("walks forward and drops today's partial candle", async () => {
     const day0 = 1315872000;

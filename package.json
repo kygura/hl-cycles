@@ -1,0 +1,14 @@
+{
+  "name": "hl-cycles",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "test": "cd backend && bun test",
+    "build": "cd frontend && bun run build"
+  }
+}

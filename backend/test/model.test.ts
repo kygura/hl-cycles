@@ -336,6 +336,47 @@ describe("computeLtf synthetic series", () => {
     // whatever raw[5] is, since it doesn't repeat at i=6, committed state must not have switched at i=5
     expect(points[5].state).toBe(points[4].state);
   });
+
+  // MODEL 2.5 rule 2: oiChange24h <= -0.08 and abs(roc6) >= 0.03 wins raw "deleveraging",
+  // regardless of L/M. 24h = 6 bars at 4h, so a snapshot at every bar close lets bar i's
+  // oiChange24h compare against bar (i-6)'s OI.
+  test("deleveraging: sharp OI (coins) drop with a big move, committed after 2-bar debounce", () => {
+    Date.now = () => now;
+    const n = 10;
+    // flat at 100 through bar 7, then a -20% move that holds at bars 8 and 9
+    const closes = [100, 100, 100, 100, 100, 100, 100, 100, 80, 80];
+    const candles = ltfCandles(closes, BAR);
+    // funding held exactly at the resting APR baseline -> lFunding = 0, neutral baseline
+    const funding: FundingRow[] = candles.map((c) => ({ t: c.t, rate: 0.0000125, premium: 0 }));
+    const snapshots: Snapshot[] = candles.map((c, i) => ({
+      t: c.t + BAR, // snapshot at each bar's close time
+      markPx: closes[i],
+      oraclePx: closes[i],
+      oiCoins: i < 8 ? 1000 : 900, // sharp coin-OI drop starting at bar 8
+      oiUsd: (i < 8 ? 1000 : 900) * closes[i],
+      funding: 0.0000125,
+      premium: 0,
+      dayNtlVlm: 0,
+      predicted: [],
+    }));
+    const points = computeLtf(candles, funding, snapshots, "4h");
+    Date.now = realNow;
+
+    // roc6[8] = 80/100 - 1 = -0.2, roc6[9] = 80/100 - 1 = -0.2 (both |roc6| >= 0.03)
+    expect(points[8].roc6).toBeCloseTo(-0.2, 6);
+    expect(points[9].roc6).toBeCloseTo(-0.2, 6);
+    // oiChange24h[8] = 900/1000 - 1 = -0.1, oiChange24h[9] = 900/1000 - 1 = -0.1 (both <= -0.08)
+    expect(points[8].oiChange24h).toBeCloseTo(-0.1, 6);
+    expect(points[9].oiChange24h).toBeCloseTo(-0.1, 6);
+
+    // raw state flips to deleveraging at bar 8, but debounce (need=2) only commits it
+    // once the raw state repeats at bar 9.
+    expect(points[7].rawState).not.toBe("deleveraging");
+    expect(points[8].rawState).toBe("deleveraging");
+    expect(points[8].state).not.toBe("deleveraging"); // not yet committed (run=1)
+    expect(points[9].rawState).toBe("deleveraging");
+    expect(points[9].state).toBe("deleveraging"); // committed (run=2)
+  });
 });
 
 describe("composite", () => {

@@ -86,3 +86,14 @@ On boot: backfill missing history (Bitstamp full once, Hyperliquid candles all i
 ## Out of scope
 
 On-chain metrics, order execution, accounts/auth, alerts/notifications, multi-asset support beyond BTC (the code keeps `coin` as a parameter where it is free, nothing more).
+
+## API amendments (resolved after the design pass, binding)
+
+1. `GET /api/health` also returns `firstSnapshot` (ms or `null`).
+2. Units: every ratio is a **fraction**, never a percent. That covers `apr`, `fundingApr`, `premium`, `drawdown`, `cycleProgress`, `oiChange24h`, `roc*`, `rv*`, and percentiles in [0,1]. The UI formats them.
+3. `features` is `Record<string, number | null>` with the exact keys listed in `docs/MODEL.md` section 4, in that order.
+4. `signals[].from` is `null` for the first label ever committed.
+5. Errors return a non-2xx status with body `{ error: string }`.
+6. `asOf` = open time of the last closed candle used by the model. `lastRefresh` = wall-clock time of the last successful data refresh. `/api/overview` includes `lastRefresh` too, so the UI polls only `/api/overview` for staleness.
+7. `htf.cycle` includes `nextHalvingEstimate` (ms, constant 2028-04-15 UTC, labelled an estimate in the UI).
+8. Weekly points (`/api/htf?interval=1w`) carry `phase` and the scores copied from the week's last day, per `docs/MODEL.md` section 1.8.

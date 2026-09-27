@@ -88,15 +88,16 @@ function fillGaps(candles: Candle[]): Candle[] {
   return out;
 }
 
-function rawPhaseOf(
-  T: number | null,
-  H: number | null,
-  c: number,
-  sma50: number | null,
-  drawdown: number,
-  roc30: number | null,
-  daysSinceLow365: number,
-): HtfPhase | null {
+function rawPhaseOf(p: {
+  T: number | null;
+  H: number | null;
+  c: number;
+  sma50: number | null;
+  drawdown: number;
+  roc30: number | null;
+  daysSinceLow365: number;
+}): HtfPhase | null {
+  const { T, H, c, sma50, drawdown, roc30, daysSinceLow365 } = p;
   if (T == null || H == null) return null;
   if ((H <= -0.6 && daysSinceLow365 <= 30) || (roc30 != null && roc30 <= -0.3 && drawdown <= -0.5 && T < 0)) {
     return "capitulation";
@@ -109,8 +110,7 @@ function rawPhaseOf(
   return H > 0 ? "distribution" : "accumulation";
 }
 
-export function computeHtf(daily: Candle[]): HtfPoint[] {
-  const now = Date.now();
+export function computeHtf(daily: Candle[], now: number): HtfPoint[] {
   const closed = daily.filter((x) => x.t + DAY_MS <= now);
   const filled = fillGaps(closed);
   const n = filled.length;
@@ -166,7 +166,15 @@ export function computeHtf(daily: Candle[]): HtfPoint[] {
   });
 
   const rawPhase: (HtfPhase | null)[] = c.map((x, i) =>
-    rawPhaseOf(T[i], H[i], x, sma50[i], drawdown[i], roc30[i], daysSinceLow365[i]),
+    rawPhaseOf({
+      T: T[i],
+      H: H[i],
+      c: x,
+      sma50: sma50[i],
+      drawdown: drawdown[i],
+      roc30: roc30[i],
+      daysSinceLow365: daysSinceLow365[i],
+    }),
   );
 
   const committed = commitWithHysteresis(

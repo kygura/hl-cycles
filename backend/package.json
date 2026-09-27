@@ -6,10 +6,10 @@
     "dev": "bun --watch src/server.ts"
   },
   "dependencies": {
-    "hono": "latest",
-    "zod": "latest"
+    "hono": "^4.13.9",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "^1.4.2"
   }
 }

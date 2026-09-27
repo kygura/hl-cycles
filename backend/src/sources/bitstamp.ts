@@ -5,19 +5,22 @@ import type { Candle } from "../types";
 
 type FetchImpl = typeof fetch;
 
+// Numeric strings from the Bitstamp API must parse to a finite number, not NaN/"".
+const numStr = z.string().transform(Number).pipe(z.number().finite());
+
 const OhlcRowSchema = z.object({
-  timestamp: z.string(),
-  open: z.string(),
-  high: z.string(),
-  low: z.string(),
-  close: z.string(),
-  volume: z.string(),
+  timestamp: numStr,
+  open: numStr,
+  high: numStr,
+  low: numStr,
+  close: numStr,
+  volume: numStr,
 });
 
 const ResponseSchema = z.object({
   data: z.object({
     pair: z.string(),
-    ohlc: z.array(OhlcRowSchema),
+    ohlc: z.array(z.unknown()),
   }),
 });
 
@@ -39,23 +42,29 @@ export async function fetchBitstampDaily(
     const json = await res.json();
     const { ohlc } = ResponseSchema.parse(json).data;
 
-    for (const row of ohlc) {
-      const tSec = Number(row.timestamp);
-      if (tSec >= todayStartSec) continue; // drop today's unclosed candle
-      out.set(tSec, {
-        t: tSec * 1000,
-        o: Number(row.open),
-        h: Number(row.high),
-        l: Number(row.low),
-        c: Number(row.close),
-        v: Number(row.volume),
+    for (const raw of ohlc) {
+      const parsed = OhlcRowSchema.safeParse(raw);
+      if (!parsed.success) {
+        console.error("dropping invalid Bitstamp OHLC row:", parsed.error.issues[0]?.message, raw);
+        continue;
+      }
+      const row = parsed.data;
+      if (row.timestamp >= todayStartSec) continue; // drop today's unclosed candle
+      out.set(row.timestamp, {
+        t: row.timestamp * 1000,
+        o: row.open,
+        h: row.high,
+        l: row.low,
+        c: row.close,
+        v: row.volume,
         src: "bitstamp",
       });
     }
 
     if (ohlc.length === 0 || ohlc.length < PAGE_LIMIT) break;
-    const lastSec = Number(ohlc[ohlc.length - 1]!.timestamp);
-    if (lastSec <= cursor) break; // safety: no progress
+    const lastRaw = (ohlc[ohlc.length - 1] as { timestamp?: unknown })?.timestamp;
+    const lastSec = typeof lastRaw === "string" ? Number(lastRaw) : NaN;
+    if (!Number.isFinite(lastSec) || lastSec <= cursor) break; // safety: no progress
     cursor = lastSec + DAY_SEC;
     if (cursor >= todayStartSec) break;
   }

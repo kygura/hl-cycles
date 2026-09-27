@@ -1,12 +1,12 @@
 // Plain JSON file storage under data/ (git-ignored). DATA_DIR env overrides
 // the directory for tests. Every write is atomic (tmp file + rename) so a
 // crash mid-write never corrupts the previous good file.
-import { mkdir, rename, writeFile, readFile } from "node:fs/promises";
+import { mkdir, rename, writeFile, readFile, appendFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Candle, FundingRow, Snapshot } from "./types";
 
-export type CandleKey = "hl-1h" | "hl-4h" | "hl-1d" | "hl-1w" | "bitstamp-1d";
+export type CandleKey = "hl-1h" | "hl-4h" | "hl-1d" | "bitstamp-1d";
 
 function dataDir(): string {
   return process.env.DATA_DIR ?? join(import.meta.dir, "..", "..", "data");
@@ -77,25 +77,24 @@ function snapshotsPath(): string {
 export async function appendSnapshot(snapshot: Snapshot): Promise<void> {
   const dir = dataDir();
   await ensureDir(dir);
-  const path = snapshotsPath();
   const line = `${JSON.stringify(snapshot)}\n`;
-  const prior = existsSync(path) ? await readFile(path, "utf8") : "";
-  await atomicWrite(path, prior + line);
+  await appendFile(snapshotsPath(), line, "utf8");
 }
 
 export async function readSnapshots(): Promise<Snapshot[]> {
   const path = snapshotsPath();
   if (!existsSync(path)) return [];
   const raw = await readFile(path, "utf8").catch(() => "");
-  return raw
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => {
-      try {
-        return JSON.parse(line) as Snapshot;
-      } catch {
-        return null;
-      }
-    })
-    .filter((s): s is Snapshot => s !== null);
+  const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+  const out: Snapshot[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    try {
+      out.push(JSON.parse(lines[i]!) as Snapshot);
+    } catch {
+      // A malformed trailing line (partial write mid-crash) is skipped; a malformed line in the
+      // middle would indicate real corruption, but we skip either way rather than throw.
+      continue;
+    }
+  }
+  return out;
 }

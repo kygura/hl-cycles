@@ -7,8 +7,12 @@ import type { Candle, FundingRow } from "../src/types";
 const BAR_4H = 14_400_000;
 const BAR_1H = 3_600_000;
 
+// Fixed anchor instead of Date.now() so the fixture data (and the server's live Date.now() calls
+// against it) is deterministic across runs.
+const FIXED_NOW = Date.UTC(2026, 0, 1);
+
 function syntheticCandles(n: number, bar: number, endBeforeNow: number): Candle[] {
-  const startT = Date.now() - endBeforeNow - n * bar;
+  const startT = FIXED_NOW - endBeforeNow - n * bar;
   return Array.from({ length: n }, (_, i) => {
     const t = startT + i * bar;
     const c = 90_000 + i * 8 + Math.sin(i / 5) * 200;
@@ -42,7 +46,7 @@ beforeAll(async () => {
   await writeFile(join(dir, "candles-hl-4h.json"), JSON.stringify(hl4h));
   await writeFile(join(dir, "candles-hl-1h.json"), JSON.stringify(hl1h));
 
-  const funding = syntheticFunding(hl4h[0]!.t, Date.now(), BAR_1H);
+  const funding = syntheticFunding(hl4h[0]!.t, FIXED_NOW, BAR_1H);
   await writeFile(join(dir, "funding.json"), JSON.stringify(funding));
 
   // NO_SCHEDULER must be set before server.ts (module-level scheduler guard) loads.

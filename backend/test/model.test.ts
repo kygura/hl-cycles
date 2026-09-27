@@ -88,11 +88,10 @@ describe("indicators", () => {
 describe("computeHtf on bitstamp fixture", () => {
   const fixture = loadFixture();
   // fixture's last day (2026-09-26) is not yet "closed" relative to real now, but the model's
-  // closed-candle rule only drops a candle while t + DAY > now; freeze "now" past the fixture end.
-  const realNow = Date.now;
-  Date.now = () => Date.parse("2026-09-27T00:00:00Z") + DAY;
-  const points = computeHtf(fixture);
-  Date.now = realNow;
+  // closed-candle rule only drops a candle while t + DAY > now; use a fixed "now" past the
+  // fixture end (not Date.now()) so the test is deterministic.
+  const now = Date.parse("2026-09-27T00:00:00Z") + DAY;
+  const points = computeHtf(fixture, now);
 
   test("keeps all 5493 rows, none dropped", () => {
     expect(points.length).toBe(5493);
@@ -277,6 +276,25 @@ describe("cycleInfo", () => {
   });
 });
 
+describe("computeHtf closed-candle boundary (MODEL: drop while t + DAY > now)", () => {
+  test("t + DAY === now is included (closed); t + DAY === now + 1 is excluded", () => {
+    const now = 20 * DAY;
+    const tClosed = now - DAY; // t + DAY === now -> kept
+    const tOpen = now - DAY + 1; // t + DAY === now + 1 -> dropped
+    const bar = (t: number): Candle => ({ t, o: 1, h: 1, l: 1, c: 1, v: 1, src: "hl" });
+
+    // day 0 forward-filled through tClosed (day 19) -> 20 daily points, last is tClosed.
+    const closedIncluded = computeHtf([bar(0), bar(tClosed)], now);
+    expect(closedIncluded.length).toBe(20);
+    expect(closedIncluded[closedIncluded.length - 1]!.t).toBe(tClosed);
+
+    // tOpen is dropped before gap-filling, leaving only the day-0 candle.
+    const openExcluded = computeHtf([bar(0), bar(tOpen)], now);
+    expect(openExcluded.length).toBe(1);
+    expect(openExcluded[0]!.t).toBe(0);
+  });
+});
+
 // ---- LTF synthetic series ----
 
 function ltfCandles(closes: number[], bar: number, startT = 0): Candle[] {
@@ -286,17 +304,28 @@ function ltfCandles(closes: number[], bar: number, startT = 0): Candle[] {
 describe("computeLtf synthetic series", () => {
   const BAR = 14_400_000;
   const now = 100_000 * BAR; // far in the future, all bars closed
-  const realNow = Date.now;
+
+  test("closed-candle boundary: t + BAR === now included, t + BAR === now + 1 excluded", () => {
+    const boundaryNow = 20 * BAR;
+    const tClosed = boundaryNow - BAR; // t + BAR === now -> kept
+    const tOpen = boundaryNow - BAR + 1; // t + BAR === now + 1 -> dropped
+    const bar = (t: number): Candle => ({ t, o: 1, h: 1, l: 1, c: 1, v: 1, src: "hl" });
+
+    const closedIncluded = computeLtf([bar(0), bar(tClosed)], [], [], "4h", boundaryNow);
+    expect(closedIncluded.some((p) => p.t === tClosed)).toBe(true);
+
+    const openExcluded = computeLtf([bar(0), bar(tOpen)], [], [], "4h", boundaryNow);
+    expect(openExcluded.some((p) => p.t === tOpen)).toBe(false);
+    expect(openExcluded.length).toBe(1);
+  });
 
   test("missing OI renormalizes leverage without lOi", () => {
-    Date.now = () => now;
     const n = 100; // enough bars for premiumZ's W30/2=90 minimum (4h)
     const closes = Array.from({ length: n }, (_, i) => 100 + i * 0.01);
     const candles = ltfCandles(closes, BAR);
     // constant funding/premium: lFunding saturates high, lPremium is exactly 0 (zero variance)
     const funding: FundingRow[] = candles.map((c) => ({ t: c.t, rate: 0.001, premium: 0.001 }));
-    const points = computeLtf(candles, funding, [], "4h");
-    Date.now = realNow;
+    const points = computeLtf(candles, funding, [], "4h", now);
     const p = points[n - 1];
     expect(p.oiUsd).toBeNull();
     expect(p.oiChange24h).toBeNull();
@@ -309,11 +338,9 @@ describe("computeLtf synthetic series", () => {
   });
 
   test("all funding/premium missing gives insufficient_data", () => {
-    Date.now = () => now;
     const closes = Array.from({ length: 5 }, (_, i) => 100 + i);
     const candles = ltfCandles(closes, BAR);
-    const points = computeLtf(candles, [], [], "4h");
-    Date.now = realNow;
+    const points = computeLtf(candles, [], [], "4h", now);
     for (const p of points) {
       expect(p.leverage).toBeNull();
       expect(p.state).toBe("insufficient_data");
@@ -321,7 +348,6 @@ describe("computeLtf synthetic series", () => {
   });
 
   test("debounce needs 2 bars in a row before a new state commits", () => {
-    Date.now = () => now;
     // build funding that flips raw state on one bar only, to check debounce doesn't commit it
     const n = 10;
     const closes = Array.from({ length: n }, () => 100);
@@ -331,8 +357,7 @@ describe("computeLtf synthetic series", () => {
       rate: i === 5 ? 0.01 : 0.001, // one-bar spike at i=5
       premium: 0.001,
     }));
-    const points = computeLtf(candles, funding, [], "4h");
-    Date.now = realNow;
+    const points = computeLtf(candles, funding, [], "4h", now);
     // whatever raw[5] is, since it doesn't repeat at i=6, committed state must not have switched at i=5
     expect(points[5].state).toBe(points[4].state);
   });
@@ -341,7 +366,6 @@ describe("computeLtf synthetic series", () => {
   // regardless of L/M. 24h = 6 bars at 4h, so a snapshot at every bar close lets bar i's
   // oiChange24h compare against bar (i-6)'s OI.
   test("deleveraging: sharp OI (coins) drop with a big move, committed after 2-bar debounce", () => {
-    Date.now = () => now;
     const n = 10;
     // flat at 100 through bar 7, then a -20% move that holds at bars 8 and 9
     const closes = [100, 100, 100, 100, 100, 100, 100, 100, 80, 80];
@@ -359,8 +383,7 @@ describe("computeLtf synthetic series", () => {
       dayNtlVlm: 0,
       predicted: [],
     }));
-    const points = computeLtf(candles, funding, snapshots, "4h");
-    Date.now = realNow;
+    const points = computeLtf(candles, funding, snapshots, "4h", now);
 
     // roc6[8] = 80/100 - 1 = -0.2, roc6[9] = 80/100 - 1 = -0.2 (both |roc6| >= 0.03)
     expect(points[8].roc6).toBeCloseTo(-0.2, 6);
@@ -438,7 +461,7 @@ describe("composite", () => {
         leverage: 0.1, momentum: 0.1, rawState: "neutral", state: "neutral",
       } as any,
     ];
-    const ov = overview({ htf, ltf, price: 10, lastRefresh: 12345, crossVenueFunding: [] });
+    const ov = overview({ htf, ltf, price: 10, lastRefresh: 12345, crossVenueFunding: [], now: 999999 });
     expect(Object.keys(ov.htf.features)).toEqual([
       "close", "sma50", "sma200", "mayer", "mayerPct", "drawdown", "sma200Slope30",
       "roc30", "roc365", "rv30", "rv30Pct", "daysSinceLow365", "tMayer", "tSlope",

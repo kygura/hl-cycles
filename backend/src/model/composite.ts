@@ -119,8 +119,9 @@ export function overview(params: {
   price: number;
   lastRefresh: number;
   crossVenueFunding: { venue: string; apr: number }[];
+  now: number;
 }): Overview {
-  const { htf, ltf, price, lastRefresh, crossVenueFunding } = params;
+  const { htf, ltf, price, lastRefresh, crossVenueFunding, now } = params;
   const h = htf[htf.length - 1];
   const l = ltf[ltf.length - 1];
   const ltfState: LtfState = l ? l.state : "insufficient_data";
@@ -190,7 +191,7 @@ export function overview(params: {
       trend: h?.trend ?? null,
       heat: h?.heat ?? null,
       features: htfFeatures,
-      cycle: cycleInfo(h ? h.t : Date.now()),
+      cycle: cycleInfo(h ? h.t : now),
     },
     ltf: {
       state: l?.state ?? null,

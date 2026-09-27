@@ -36,11 +36,12 @@ async function getCache(): Promise<Cache> {
     readSnapshots(),
   ]);
 
+  const now = Date.now();
   const daily = mergeHtfDaily(bitstamp, hl1d);
-  const htf = computeHtf(daily);
+  const htf = computeHtf(daily, now);
   const ltf: Record<LtfInterval, LtfPoint[]> = {
-    "4h": computeLtf(hl4h, funding, snapshots, "4h"),
-    "1h": computeLtf(hl1h, funding, snapshots, "1h"),
+    "4h": computeLtf(hl4h, funding, snapshots, "4h", now),
+    "1h": computeLtf(hl1h, funding, snapshots, "1h", now),
   };
 
   cache = {
@@ -88,6 +89,7 @@ app.get("/api/overview", async (c) => {
     price,
     lastRefresh: state.lastRefresh ?? 0,
     crossVenueFunding,
+    now: Date.now(),
   });
   return c.json(ov);
 });
@@ -137,5 +139,6 @@ if (process.env.NO_SCHEDULER !== "1") {
 export { app };
 export default {
   port: 8787,
+  hostname: "127.0.0.1",
   fetch: app.fetch,
 };

@@ -83,9 +83,9 @@ export function computeLtf(
   funding: FundingRow[],
   snapshots: Snapshot[],
   interval: LtfInterval,
+  now: number,
 ): LtfPoint[] {
   const { BAR, W30, W90, BARS_PER_YEAR } = CONSTS[interval];
-  const now = Date.now();
   const bars = candles.filter((x) => x.t + BAR <= now).sort((a, b) => a.t - b.t);
   const n = bars.length;
   const c = bars.map((x) => x.c);

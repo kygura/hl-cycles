@@ -37,6 +37,15 @@ export function getState(): RefreshState {
   return { ...state };
 }
 
+// Initialize firstSnapshot/lastSnapshot from snapshots.jsonl on module load (not gated by the
+// scheduler), so getState() is correct under NO_SCHEDULER and right after a process restart,
+// before any in-process refresh/snapshot has run.
+const bootSnapshots = await readSnapshots();
+if (bootSnapshots.length > 0) {
+  state.firstSnapshot = bootSnapshots[0]!.t;
+  state.lastSnapshot = bootSnapshots[bootSnapshots.length - 1]!.t;
+}
+
 // Cache of the two daily series feeding htfDaily(); populated by refreshAll.
 const dailyCache = {
   bitstamp: [] as Candle[],
@@ -91,25 +100,36 @@ async function refreshFunding(): Promise<void> {
 
 let refreshing = false;
 
+// Each source refreshes independently: one source failing (rate limit, network blip) must not
+// skip the others. Errors are collected into a single summary string on state.lastError; null
+// when every source succeeded.
 export async function refreshAll(): Promise<void> {
   if (refreshing) return; // guard against overlapping runs
   refreshing = true;
+  const errors: string[] = [];
+  const sources: Array<[string, () => Promise<void>]> = [
+    ["bitstamp", refreshBitstamp],
+    ["hl-1h", () => refreshHlCandles("hl-1h", "1h")],
+    ["hl-4h", () => refreshHlCandles("hl-4h", "4h")],
+    ["hl-1d", () => refreshHlCandles("hl-1d", "1d")],
+    ["funding", refreshFunding],
+  ];
+  for (const [name, run] of sources) {
+    try {
+      await run();
+    } catch (err) {
+      errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   try {
-    await refreshBitstamp();
-    await refreshHlCandles("hl-1h", "1h");
-    await refreshHlCandles("hl-4h", "4h");
-    await refreshHlCandles("hl-1d", "1d");
-    await refreshHlCandles("hl-1w", "1w");
-    await refreshFunding();
     dailyCache.bitstamp = await loadCandles("bitstamp-1d");
     dailyCache.hl = await loadCandles("hl-1d");
-    state.lastRefresh = Date.now();
-    state.lastError = null;
   } catch (err) {
-    state.lastError = err instanceof Error ? err.message : String(err);
-  } finally {
-    refreshing = false;
+    errors.push(`daily-cache: ${err instanceof Error ? err.message : String(err)}`);
   }
+  state.lastRefresh = Date.now();
+  state.lastError = errors.length ? errors.join("; ") : null;
+  refreshing = false;
 }
 
 export async function takeSnapshot(): Promise<void> {
@@ -129,12 +149,6 @@ let schedulerStarted = false;
 export async function startScheduler(): Promise<void> {
   if (schedulerStarted) return;
   schedulerStarted = true;
-
-  const existingSnapshots = await readSnapshots();
-  if (existingSnapshots.length > 0) {
-    state.firstSnapshot = existingSnapshots[0]!.t;
-    state.lastSnapshot = existingSnapshots[existingSnapshots.length - 1]!.t;
-  }
 
   await refreshAll();
   await takeSnapshot();

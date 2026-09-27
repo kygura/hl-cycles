@@ -49,6 +49,9 @@ async function postInfo(
   return res.json();
 }
 
+// Numeric strings from the HL API must parse to a finite number, not NaN/"".
+const numStr = z.string().transform(Number).pipe(z.number().finite());
+
 // --- candleSnapshot ---
 
 const CandleSchema = z.object({
@@ -56,15 +59,13 @@ const CandleSchema = z.object({
   T: z.number(),
   s: z.string(),
   i: z.string(),
-  o: z.string(),
-  c: z.string(),
-  h: z.string(),
-  l: z.string(),
-  v: z.string(),
+  o: numStr,
+  c: numStr,
+  h: numStr,
+  l: numStr,
+  v: numStr,
   n: z.number(),
 });
-
-const CandlesSchema = z.array(CandleSchema);
 
 export type HlInterval = "1h" | "4h" | "1d" | "1w";
 
@@ -88,21 +89,21 @@ export async function fetchCandles(
       { type: "candleSnapshot", req: { coin, interval, startTime: cursor, endTime } },
       fetchImpl,
     );
-    const rows = CandlesSchema.parse(json);
-    for (const row of rows) {
-      out.set(row.t, {
-        t: row.t,
-        o: Number(row.o),
-        h: Number(row.h),
-        l: Number(row.l),
-        c: Number(row.c),
-        v: Number(row.v),
-        src: "hl",
-      });
+    const rawRows = z.array(z.unknown()).parse(json);
+    for (const raw of rawRows) {
+      const parsed = CandleSchema.safeParse(raw);
+      if (!parsed.success) {
+        console.error("dropping invalid HL candle row:", parsed.error.issues[0]?.message, raw);
+        continue;
+      }
+      const row = parsed.data;
+      out.set(row.t, { t: row.t, o: row.o, h: row.h, l: row.l, c: row.c, v: row.v, src: "hl" });
     }
-    if (rows.length < MAX_ROWS_PER_CALL) break;
-    const lastT = rows[rows.length - 1]!.t;
-    if (lastT <= cursor) break; // safety: no progress, avoid infinite loop
+    if (rawRows.length < MAX_ROWS_PER_CALL) break;
+    // t/T are always plain JSON numbers per the API contract (unlike o/h/l/c/v), so it's safe
+    // to read the last raw row's t directly for pagination even if that row failed validation.
+    const lastT = (rawRows[rawRows.length - 1] as { t?: unknown })?.t;
+    if (typeof lastT !== "number" || lastT <= cursor) break; // safety: no progress, avoid infinite loop
     cursor = lastT + 1;
     if (cursor >= endTime) break;
   }
@@ -114,12 +115,10 @@ export async function fetchCandles(
 
 const FundingHistoryRowSchema = z.object({
   coin: z.string(),
-  fundingRate: z.string(),
-  premium: z.string(),
+  fundingRate: numStr,
+  premium: numStr,
   time: z.number(),
 });
-
-const FundingHistorySchema = z.array(FundingHistoryRowSchema);
 
 const FUNDING_PAGE_SIZE = 500;
 
@@ -137,17 +136,19 @@ export async function fetchFunding(
       { type: "fundingHistory", coin, startTime: cursor, endTime: now },
       fetchImpl,
     );
-    const rows = FundingHistorySchema.parse(json);
-    for (const row of rows) {
-      out.set(row.time, {
-        t: row.time,
-        rate: Number(row.fundingRate),
-        premium: Number(row.premium),
-      });
+    const rawRows = z.array(z.unknown()).parse(json);
+    for (const raw of rawRows) {
+      const parsed = FundingHistoryRowSchema.safeParse(raw);
+      if (!parsed.success) {
+        console.error("dropping invalid HL funding row:", parsed.error.issues[0]?.message, raw);
+        continue;
+      }
+      const row = parsed.data;
+      out.set(row.time, { t: row.time, rate: row.fundingRate, premium: row.premium });
     }
-    if (rows.length === 0 || rows.length < FUNDING_PAGE_SIZE) break;
-    const lastT = rows[rows.length - 1]!.time;
-    if (lastT <= cursor) break; // safety: no progress
+    if (rawRows.length === 0 || rawRows.length < FUNDING_PAGE_SIZE) break;
+    const lastT = (rawRows[rawRows.length - 1] as { time?: unknown })?.time;
+    if (typeof lastT !== "number" || lastT <= cursor) break; // safety: no progress
     cursor = lastT + 1;
     if (cursor >= now) break;
   }
@@ -170,16 +171,16 @@ const MetaSchema = z.object({
 });
 
 const AssetCtxSchema = z.object({
-  funding: z.string(),
-  openInterest: z.string(),
-  prevDayPx: z.string(),
-  dayNtlVlm: z.string(),
-  premium: z.string().nullable(),
-  oraclePx: z.string(),
-  markPx: z.string(),
-  midPx: z.string().nullable(),
+  funding: numStr,
+  openInterest: numStr,
+  prevDayPx: numStr,
+  dayNtlVlm: numStr,
+  premium: numStr.nullable(),
+  oraclePx: numStr,
+  markPx: numStr,
+  midPx: numStr.nullable(),
   impactPxs: z.array(z.string()).nullable(),
-  dayBaseVlm: z.string(),
+  dayBaseVlm: numStr,
 });
 
 const MetaAndAssetCtxsSchema = z.tuple([MetaSchema, z.array(AssetCtxSchema)]);
@@ -188,7 +189,7 @@ const MetaAndAssetCtxsSchema = z.tuple([MetaSchema, z.array(AssetCtxSchema)]);
 // for a thin/inactive venue on a given coin (seen live), so all three are
 // optional here — filtered out below when building the BTC predicted list.
 const PredictedFundingVenueSchema = z.object({
-  fundingRate: z.string().optional(),
+  fundingRate: numStr.optional(),
   nextFundingTime: z.number().optional(),
   fundingIntervalHours: z.number().optional(),
 });
@@ -226,22 +227,22 @@ export async function fetchSnapshot(
     )
     .map(([venue, v]) => ({
       venue,
-      rate: Number(v.fundingRate),
-      intervalHours: v.fundingIntervalHours,
+      rate: v.fundingRate!,
+      intervalHours: v.fundingIntervalHours!,
     }));
 
-  const oiCoins = Number(ctx.openInterest);
-  const markPx = Number(ctx.markPx);
+  const oiCoins = ctx.openInterest;
+  const markPx = ctx.markPx;
 
   return {
     t: Date.now(),
     markPx,
-    oraclePx: Number(ctx.oraclePx),
+    oraclePx: ctx.oraclePx,
     oiCoins,
     oiUsd: oiCoins * markPx,
-    funding: Number(ctx.funding),
-    premium: ctx.premium === null ? null : Number(ctx.premium),
-    dayNtlVlm: Number(ctx.dayNtlVlm),
+    funding: ctx.funding,
+    premium: ctx.premium,
+    dayNtlVlm: ctx.dayNtlVlm,
     predicted,
   };
 }

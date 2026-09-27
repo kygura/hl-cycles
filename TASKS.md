@@ -12,6 +12,8 @@ Tracker: local markdown (this file). Status: done / frontier / blocked.
 - T4 data layer (Sonnet): HL + Bitstamp sources with injected fetch seam, atomic JSON store, 15-min scheduler. predictedFundings has null venues, filtered. Live backfill ~46s: hl-1h 5003, hl-4h 5001, hl-1d 2231, bitstamp 5493, funding 29069.
 - T5 model (Sonnet): pure model fns ported from calibration scripts; 60/60 fixture switches match; computeHtf 80ms. deleveraging state has no dedicated test yet.
 - T6 api (Sonnet): 5 routes, model recomputed only on refresh/snapshot change; signals limit clamps at 1000; cross-venue apr = rate*8760/intervalHours; deleveraging synthetic test added. 56 tests. Payloads htf 3.6MB, ltf 3MB unrounded.
+- T7 frontend (Sonnet): 7 components per DESIGN.md, puppeteer-verified 0 console errors at 1440/1024. LTF `downtrend` state colored grey-violet.
+- T8 verification (4R lenses, checker, ponytail+standards/spec; 1 fix loop): localhost bind, finite-number validation, per-source failure isolation, injected clock, true append for snapshots, dropped unused hl-1w fetch, full-history HTF range (minBarSpacing), axis formatters, stale/null handling, shared color tokens, pinned deps. 60 tests green, build clean, live dev smoke ok. Skipped: CI/pre-commit (no remote), alerting (local tool), pagination helper refactor.
 
 ## Tasks
 | id | task | model | depends | status |
@@ -23,5 +25,5 @@ Tracker: local markdown (this file). Status: done / frontier / blocked.
 | T4 | data layer: HL + Bitstamp sources, JSON store, refresher/snapshot scheduler | Sonnet | T1 | done |
 | T5 | indicators + HTF/LTF/composite/signals model, fixture tests | Sonnet | T1, T2 | done |
 | T6 | API routes wiring model to store | Sonnet | T4, T5 | done |
-| T7 | frontend per DESIGN.md | Sonnet | T3, T6 | frontier |
-| T8 | verification gate (review lenses, finalizer, ponytail-review, standards/spec, design drift, tests/build) | mixed | T7 | blocked |
+| T7 | frontend per DESIGN.md | Sonnet | T3, T6 | done |
+| T8 | verification gate (review lenses, finalizer, ponytail-review, standards/spec, design drift, tests/build) | mixed | T7 | done |

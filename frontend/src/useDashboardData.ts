@@ -90,11 +90,16 @@ export function useDashboardData(htfInterval: "1d" | "1w", ltfInterval: "4h" | "
     };
   }, [ltfInterval]);
 
+  // DESIGN.md §6.1/§7: staleness is derived from health.lastRefresh (health is
+  // polled alongside overview), not overview.lastRefresh — one source. A null
+  // health.lastRefresh (never refreshed) is not "stale", it's "not refreshed
+  // yet"; StatusBar renders that distinction.
+  const refreshTs = health?.lastRefresh ?? null;
   const status: Status = overview == null
     ? (overviewFailed ? "error" : "loading")
     : overviewFailed
     ? "error"
-    : Date.now() - overview.lastRefresh > STALE_MS
+    : refreshTs != null && Date.now() - refreshTs > STALE_MS
     ? "stale"
     : "ok";
 

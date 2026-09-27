@@ -11,15 +11,7 @@ import {
 } from "lightweight-charts";
 import type { HtfPhase, HtfPoint } from "../api";
 import { fmtDate, fmtPrice, fmtUnsigned2, fmtPercentSigned, fmtScore } from "../format";
-
-const PHASE_COLOR: Record<HtfPhase, string> = {
-  accumulation: "#3987e5",
-  expansion: "#199e70",
-  euphoria: "#c98500",
-  distribution: "#e66767",
-  markdown: "#9085e9",
-  capitulation: "#d55181",
-};
+import { PHASE_TOKEN, PHASE_VAR } from "../tokens";
 
 function alpha(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -61,7 +53,16 @@ export function HtfChart({
       },
       crosshair: { mode: 0 },
       rightPriceScale: { mode: 1, borderColor: css("--line") },
-      timeScale: { timeVisible: false, borderColor: css("--line"), rightOffset: 4 },
+      // minBarSpacing default (0.5px) blocks fitContent() from showing full
+      // history once there are more daily bars than px available (5000+ bars
+      // since 2011 vs. ~1400px container) — it clamps to whatever fits at
+      // 0.5px/bar instead of compressing further. Full history (DESIGN §6.4)
+      // needs bars allowed to compress well below that.
+      timeScale: { timeVisible: false, borderColor: css("--line"), rightOffset: 4, minBarSpacing: 0.05 },
+      localization: {
+        priceFormatter: fmtPrice,
+        timeFormatter: (time: UTCTimestamp) => fmtDate((time as number) * 1000),
+      },
       autoSize: true,
     });
     chartRef.current = chart;
@@ -138,7 +139,7 @@ export function HtfChart({
       data.map((d) => ({
         time: (d.t / 1000) as UTCTimestamp,
         value: 1,
-        color: d.phase ? alpha(PHASE_COLOR[d.phase], 0.14) : "rgba(0,0,0,0)",
+        color: d.phase ? alpha(css(PHASE_VAR[d.phase]), 0.14) : "rgba(0,0,0,0)",
       }))
     );
 
@@ -159,14 +160,20 @@ export function HtfChart({
       );
     }
 
-    chart.timeScale().fitContent();
+    // autoSize measures the container width via ResizeObserver, which fires
+    // asynchronously — fitContent() here (same tick as setData) can run before
+    // that first measurement, computing the visible range against a 0-width
+    // chart. Defer one frame so the real width is in place (DESIGN §6.4: full
+    // history on initial load).
+    const raf = requestAnimationFrame(() => chart.timeScale().fitContent());
+    return () => cancelAnimationFrame(raf);
   }, [data, halvings]);
 
   return (
     <section className="region">
       <div className="region-header">
         <span>
-          HtfChart &nbsp; BTC/USD daily · log
+          BTC/USD daily · log
           <span className="segmented" style={{ marginLeft: 8, display: "inline-flex" }}>
             {(["1d", "1w"] as const).map((i) => (
               <button key={i} role="tab" aria-selected={interval === i} onClick={() => onIntervalChange(i)}>
@@ -176,9 +183,9 @@ export function HtfChart({
           </span>
         </span>
         <span className="chart-legend">
-          {(Object.keys(PHASE_COLOR) as HtfPhase[]).map((p) => (
+          {(Object.keys(PHASE_TOKEN) as HtfPhase[]).map((p) => (
             <span className="item" key={p}>
-              <span className="swatch" style={{ background: PHASE_COLOR[p] }} />
+              <span className="swatch" style={{ background: PHASE_TOKEN[p] }} />
               {p}
             </span>
           ))}

@@ -96,6 +96,8 @@ export type Health = {
   lastSnapshot: number | null;
   firstSnapshot: number | null;
   counts: { candles1d: number; candles4h: number; candles1h: number; funding: number; snapshots: number };
+  /** Optional — not yet in every backend response; guard with `?.` (see backend/src/refresh.ts state.lastError). */
+  lastError?: string | null;
 };
 
 export type HtfResponse = { candles: HtfPoint[]; halvings: number[] };

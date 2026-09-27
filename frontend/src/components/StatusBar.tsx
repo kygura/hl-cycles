@@ -13,16 +13,25 @@ export function StatusBar({
   status: Status;
   onOpenGuide: () => void;
 }) {
-  const color = status === "ok" ? "var(--ok)" : status === "stale" ? "var(--warn)" : status === "error" ? "var(--bad)" : "var(--text-3)";
+  // DESIGN.md §6.1/§7: health.lastRefresh is the one source for age/staleness
+  // (health is polled alongside overview) — not overview.lastRefresh.
+  const refreshTs = health?.lastRefresh ?? null;
 
   let pillText: string;
-  if (status === "loading") pillText = "loading…";
-  else if (status === "error") pillText = "● offline — retrying in 30s";
-  else if (overview) {
-    const age = fmtRelativeAge(overview.lastRefresh);
-    pillText = status === "stale" ? `● stale ${age}` : `● live ${age}`;
+  let color: string;
+  if (status === "loading") {
+    pillText = "loading…";
+    color = "var(--text-3)";
+  } else if (status === "error") {
+    pillText = "● offline — retrying in 30s";
+    color = "var(--bad)";
+  } else if (refreshTs == null) {
+    pillText = "not refreshed yet";
+    color = "var(--text-3)";
   } else {
-    pillText = "● —";
+    const age = fmtRelativeAge(refreshTs);
+    pillText = status === "stale" ? `● stale ${age}` : `● live ${age}`;
+    color = status === "stale" ? "var(--warn)" : "var(--ok)";
   }
 
   return (
@@ -34,6 +43,11 @@ export function StatusBar({
         <span className="pill mono" style={{ color }}>
           {pillText}
         </span>
+        {health?.lastError && (
+          <span className="pill mono" style={{ color: "var(--bad)" }} title={health.lastError}>
+            ● refresh error
+          </span>
+        )}
       </div>
       <button className="guide-btn" onClick={onOpenGuide} aria-haspopup="dialog">
         ? Phase guide

@@ -8,19 +8,9 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { LtfPoint, LtfState } from "../api";
-import { fmtDate, fmtPrice, fmtApr, fmtBp, fmtCompactUsd, fmtScore, fmtPercentSigned } from "../format";
-
-const STATE_COLOR: Record<LtfState, string> = {
-  crowded_long: "#e66767",
-  healthy_uptrend: "#199e70",
-  short_squeeze_fuel: "#c98500",
-  crowded_short: "#d55181",
-  deleveraging: "#9085e9",
-  downtrend: "#736aa8",
-  neutral: "#9aa3ad",
-  insufficient_data: "#5f6873",
-};
+import type { LtfPoint } from "../api";
+import { fmtDate, fmtTimestamp, fmtPrice, fmtApr, fmtBp, fmtCompactUsd, fmtScore, fmtPercentSigned } from "../format";
+import { STATE_VAR } from "../tokens";
 
 function alpha(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -64,23 +54,61 @@ export function LtfChart({
       crosshair: { mode: 0 },
       rightPriceScale: { borderColor: css("--line") },
       timeScale: { timeVisible: true, borderColor: css("--line"), rightOffset: 4 },
+      // No chart-level localization.priceFormatter here: it wins over every
+      // series' own priceFormat (see HtfChart, single pane, for that case),
+      // and this chart has three panes needing three different formats
+      // (price / funding % / OI compact USD) — each series sets its own.
+      localization: {
+        timeFormatter: (time: UTCTimestamp) => fmtTimestamp((time as number) * 1000),
+      },
       autoSize: true,
     });
     chartRef.current = chart;
 
     candleRef.current = chart.addSeries(
       CandlestickSeries,
-      { upColor: css("--up"), downColor: css("--down"), wickUpColor: css("--up"), wickDownColor: css("--down"), borderVisible: false },
+      {
+        upColor: css("--up"),
+        downColor: css("--down"),
+        wickUpColor: css("--up"),
+        wickDownColor: css("--down"),
+        borderVisible: false,
+        priceFormat: { type: "custom", formatter: fmtPrice, minMove: 0.01 },
+      },
       0
     );
-    emaRef.current = chart.addSeries(LineSeries, { color: css("--text-2"), lineWidth: 1, lastValueVisible: false, crosshairMarkerVisible: false }, 0);
+    emaRef.current = chart.addSeries(
+      LineSeries,
+      {
+        color: css("--text-2"),
+        lineWidth: 1,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        priceFormat: { type: "custom", formatter: fmtPrice, minMove: 0.01 },
+      },
+      0
+    );
     stripRef.current = chart.addSeries(HistogramSeries, { priceScaleId: "state-strip", priceLineVisible: false, lastValueVisible: false }, 0);
     chart.priceScale("state-strip").applyOptions({ scaleMargins: { top: 0.97, bottom: 0 } });
 
-    fundingRef.current = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, 1);
+    fundingRef.current = chart.addSeries(
+      HistogramSeries,
+      { priceLineVisible: false, lastValueVisible: false, priceFormat: { type: "custom", formatter: fmtApr, minMove: 0.0001 } },
+      1
+    );
     fundingRef.current.createPriceLine({ price: 0, color: css("--line-strong"), lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: "" });
 
-    oiRef.current = chart.addSeries(LineSeries, { color: css("--text-1"), lineWidth: 1, lastValueVisible: false, crosshairMarkerVisible: false }, 2);
+    oiRef.current = chart.addSeries(
+      LineSeries,
+      {
+        color: css("--text-1"),
+        lineWidth: 1,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        priceFormat: { type: "custom", formatter: fmtCompactUsd, minMove: 1 },
+      },
+      2
+    );
 
     chart.panes()[0]?.setStretchFactor(PRICE_H);
     chart.panes()[1]?.setStretchFactor(FUNDING_H);
@@ -136,7 +164,7 @@ export function LtfChart({
 
     candleSeries.setData(data.map((d) => ({ time: (d.t / 1000) as UTCTimestamp, open: d.o, high: d.h, low: d.l, close: d.c })));
     emaSeries.setData(data.filter((d) => d.ema50 != null).map((d) => ({ time: (d.t / 1000) as UTCTimestamp, value: d.ema50 as number })));
-    stripSeries.setData(data.map((d) => ({ time: (d.t / 1000) as UTCTimestamp, value: 1, color: alpha(STATE_COLOR[d.state], 0.7) })));
+    stripSeries.setData(data.map((d) => ({ time: (d.t / 1000) as UTCTimestamp, value: 1, color: alpha(css(STATE_VAR[d.state]), 0.7) })));
 
     const allFundingNull = data.every((d) => d.fundingApr == null);
     setNoFunding(allFundingNull);
@@ -154,14 +182,16 @@ export function LtfChart({
       data.map((d) => (d.oiUsd == null ? { time: (d.t / 1000) as UTCTimestamp } : { time: (d.t / 1000) as UTCTimestamp, value: d.oiUsd }))
     );
 
-    chart.timeScale().fitContent();
+    // Same autoSize/fitContent race as HtfChart — defer to next frame.
+    const raf = requestAnimationFrame(() => chart.timeScale().fitContent());
+    return () => cancelAnimationFrame(raf);
   }, [data]);
 
   return (
     <section className="region">
       <div className="region-header">
         <span>
-          LtfChart &nbsp; BTC-PERP · Hyperliquid · {interval}
+          BTC-PERP · Hyperliquid · {interval}
           <span className="segmented" style={{ marginLeft: 8, display: "inline-flex" }}>
             {(["4h", "1h"] as const).map((i) => (
               <button key={i} role="tab" aria-selected={interval === i} onClick={() => onIntervalChange(i)}>

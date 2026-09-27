@@ -1,24 +1,6 @@
 import type { HtfPhase, LtfState, Signal } from "../api";
 import { fmtDate, fmtTimestamp, fmtPrice, fmtScore } from "../format";
-
-const PHASE_TOKEN: Record<HtfPhase, string> = {
-  accumulation: "var(--ph-accumulation)",
-  expansion: "var(--ph-expansion)",
-  euphoria: "var(--ph-euphoria)",
-  distribution: "var(--ph-distribution)",
-  markdown: "var(--ph-markdown)",
-  capitulation: "var(--ph-capitulation)",
-};
-const STATE_TOKEN: Record<LtfState, string> = {
-  crowded_long: "var(--st-crowded-long)",
-  healthy_uptrend: "var(--st-healthy-uptrend)",
-  short_squeeze_fuel: "var(--st-squeeze)",
-  crowded_short: "var(--st-crowded-short)",
-  deleveraging: "var(--st-deleveraging)",
-  downtrend: "var(--st-downtrend)",
-  neutral: "var(--st-neutral)",
-  insufficient_data: "var(--st-nodata)",
-};
+import { PHASE_TOKEN, STATE_TOKEN } from "../tokens";
 
 function tokenFor(frame: "HTF" | "LTF", label: string | null): string {
   if (label == null) return "var(--text-3)";
@@ -43,7 +25,7 @@ export function SignalTable({
   return (
     <section className="region">
       <div className="region-header">
-        <span>SignalTable</span>
+        <span>Signal history</span>
         <span className="segmented" role="tablist">
           {(["ALL", "HTF", "LTF"] as const).map((f) => (
             <button key={f} role="tab" aria-selected={filter === f} onClick={() => onFilterChange(f)}>

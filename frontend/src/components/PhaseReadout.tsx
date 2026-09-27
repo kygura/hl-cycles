@@ -1,5 +1,6 @@
 import type { Overview } from "../api";
 import { fmtScore, fmtDate, fmtPercent, fmtRawOrDash, fmtApr } from "../format";
+import { PHASE_TOKEN, STATE_TOKEN } from "../tokens";
 
 function ScoreBar({ label, value }: { label: string; value: number | null }) {
   const pct = value == null ? 50 : ((value + 1) / 2) * 100;
@@ -14,26 +15,6 @@ function ScoreBar({ label, value }: { label: string; value: number | null }) {
     </div>
   );
 }
-
-const PHASE_TOKEN: Record<string, string> = {
-  accumulation: "var(--ph-accumulation)",
-  expansion: "var(--ph-expansion)",
-  euphoria: "var(--ph-euphoria)",
-  distribution: "var(--ph-distribution)",
-  markdown: "var(--ph-markdown)",
-  capitulation: "var(--ph-capitulation)",
-};
-
-const STATE_TOKEN: Record<string, string> = {
-  crowded_long: "var(--st-crowded-long)",
-  healthy_uptrend: "var(--st-healthy-uptrend)",
-  short_squeeze_fuel: "var(--st-squeeze)",
-  crowded_short: "var(--st-crowded-short)",
-  deleveraging: "var(--st-deleveraging)",
-  downtrend: "var(--st-downtrend)",
-  neutral: "var(--st-neutral)",
-  insufficient_data: "var(--st-nodata)",
-};
 
 export function PhaseReadout({ overview }: { overview: Overview }) {
   const { htf, ltf, composite, crossVenueFunding } = overview;

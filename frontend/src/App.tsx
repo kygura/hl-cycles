@@ -54,7 +54,7 @@ function App() {
         <div className="app-grid">
           <section className={`region span-7 ${status === "stale" ? "readout-top-warn" : ""}`}>
             <div className="region-header">
-              <span>PhaseReadout</span>
+              <span>Phase readout</span>
             </div>
             <div className="region-body">{overview && <PhaseReadout overview={overview} />}</div>
           </section>
@@ -75,7 +75,7 @@ function App() {
             {htfError ? (
               <section className="region">
                 <div className="region-header">
-                  <span>HtfChart</span>
+                  <span>HTF chart</span>
                 </div>
                 <div className="region-error">
                   failed to load
@@ -87,7 +87,7 @@ function App() {
             ) : (
               <section className="region">
                 <div className="region-header">
-                  <span>HtfChart</span>
+                  <span>HTF chart</span>
                 </div>
                 <div className="region-loading" style={{ height: 480 }} />
               </section>
@@ -98,7 +98,7 @@ function App() {
             {ltfError ? (
               <section className="region">
                 <div className="region-header">
-                  <span>LtfChart</span>
+                  <span>LTF chart</span>
                 </div>
                 <div className="region-error">
                   failed to load
@@ -110,7 +110,7 @@ function App() {
             ) : (
               <section className="region">
                 <div className="region-header">
-                  <span>LtfChart</span>
+                  <span>LTF chart</span>
                 </div>
                 <div className="region-loading" style={{ height: 520 }} />
               </section>
@@ -121,7 +121,7 @@ function App() {
             {signalsError ? (
               <section className="region">
                 <div className="region-header">
-                  <span>SignalTable</span>
+                  <span>Signal history</span>
                 </div>
                 <div className="region-error">
                   failed to load

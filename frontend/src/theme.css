@@ -92,6 +92,7 @@ button {
 .app-grid {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
+  align-items: start;
   gap: 16px;
 }
 
@@ -340,6 +341,10 @@ button {
   cursor: pointer;
   color: var(--text-2);
   font-size: var(--fs-sm);
+  list-style: none;
+}
+.readout-features summary::-webkit-details-marker {
+  display: none;
 }
 .readout-features table {
   margin-top: 8px;

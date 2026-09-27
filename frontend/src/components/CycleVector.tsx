@@ -1,17 +1,9 @@
 import { useState } from "react";
 import type { HtfPhase } from "../api";
 import { fmtDate, fmtScore } from "../format";
+import { PHASE_TOKEN } from "../tokens";
 
 export type VectorPoint = { t: number; trend: number; heat: number; phase: HtfPhase };
-
-const PHASE_TOKEN: Record<HtfPhase, string> = {
-  accumulation: "var(--ph-accumulation)",
-  expansion: "var(--ph-expansion)",
-  euphoria: "var(--ph-euphoria)",
-  distribution: "var(--ph-distribution)",
-  markdown: "var(--ph-markdown)",
-  capitulation: "var(--ph-capitulation)",
-};
 
 const PAD = 24;
 const SIZE = 320;

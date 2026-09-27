@@ -5,3 +5,4 @@ data/*.jsonl
 data/*.sqlite*
 !data/.gitkeep
 .env
+.codegraph/

@@ -11,6 +11,7 @@ Tracker: local markdown (this file). Status: done / frontier / blocked.
 - T3 design (Fable): DESIGN.md, 7 components, dark palette, CycleVector SVG. API gaps resolved in SPEC "API amendments".
 - T4 data layer (Sonnet): HL + Bitstamp sources with injected fetch seam, atomic JSON store, 15-min scheduler. predictedFundings has null venues, filtered. Live backfill ~46s: hl-1h 5003, hl-4h 5001, hl-1d 2231, bitstamp 5493, funding 29069.
 - T5 model (Sonnet): pure model fns ported from calibration scripts; 60/60 fixture switches match; computeHtf 80ms. deleveraging state has no dedicated test yet.
+- T6 api (Sonnet): 5 routes, model recomputed only on refresh/snapshot change; signals limit clamps at 1000; cross-venue apr = rate*8760/intervalHours; deleveraging synthetic test added. 56 tests. Payloads htf 3.6MB, ltf 3MB unrounded.
 
 ## Tasks
 | id | task | model | depends | status |
@@ -21,6 +22,6 @@ Tracker: local markdown (this file). Status: done / frontier / blocked.
 | T3 | DESIGN.md | Fable | SPEC | done |
 | T4 | data layer: HL + Bitstamp sources, JSON store, refresher/snapshot scheduler | Sonnet | T1 | done |
 | T5 | indicators + HTF/LTF/composite/signals model, fixture tests | Sonnet | T1, T2 | done |
-| T6 | API routes wiring model to store | Sonnet | T4, T5 | frontier |
-| T7 | frontend per DESIGN.md | Sonnet | T3, T6 | blocked |
+| T6 | API routes wiring model to store | Sonnet | T4, T5 | done |
+| T7 | frontend per DESIGN.md | Sonnet | T3, T6 | frontier |
 | T8 | verification gate (review lenses, finalizer, ponytail-review, standards/spec, design drift, tests/build) | mixed | T7 | blocked |

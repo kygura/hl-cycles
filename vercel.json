@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "bun install --frozen-lockfile",
+  "buildCommand": "VITE_STATIC=1 bun run build && bun run export",
+  "outputDirectory": "frontend/dist",
+  "ignoreCommand": "case \"$(git log -1 --pretty=%s)\" in *\"[vercel-skip]\"*) exit 0 ;; esac; exit 1"
+}

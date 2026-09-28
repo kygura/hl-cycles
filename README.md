@@ -27,8 +27,8 @@ Data stored in `data/` as JSON, committed to the repo (this is how the deployed 
 - `bun run dev` — start backend + frontend
 - `bun test` — run backend test suite
 - `bun run build` — build frontend to `frontend/dist/`
-- `bun run cron` — one-shot headless collection (refresh + snapshot + static export); add `-- --backfill` to also run the incremental daily backfill
-- `bun run export` — re-render `frontend/dist/api/*.json` from current data, without collecting anything new
+- `bun run cron` — one-shot headless collection (refresh + snapshot, persists `data/state.json`); add `-- --backfill` to also run the incremental daily backfill
+- `bun run export` — render `frontend/dist/api/*.json` from current data (no network calls) — this is what the Vercel build runs
 
 ## Data sources
 
@@ -39,21 +39,35 @@ Data stored in `data/` as JSON, committed to the repo (this is how the deployed 
 
 ## Deploy
 
-The dashboard runs as a free static site on GitHub Pages, kept current by a GitHub Actions workflow (`.github/workflows/collect.yml`) that collects data every 15 minutes and re-renders the static API. No server to host, no secrets.
+The dashboard runs as a static site, deployed to two targets that serve the same static build:
 
-1. Create a **public** GitHub repo. Public matters here: Actions minutes and Pages are free and unlimited on public repos; the private free tier is ~2000 min/mo, and this schedule burns roughly that much on its own.
-2. `git remote add origin <your-repo-url>`
-3. `git push -u origin main` (this repo's current branch)
-4. In the repo's Settings → Pages, set **Source** to "GitHub Actions".
-5. Go to the Actions tab and run the "collect" workflow once manually (`workflow_dispatch`) to populate `frontend/dist/api/` and trigger the first deploy. (No need to touch Settings → Actions → Workflow permissions — the workflow already declares the `contents: write` / `pages: write` / `id-token: write` it needs per-job.)
-6. The site is live at `https://<your-username>.github.io/hl-cycles/`.
+- **GitHub Pages** — deployed by `.github/workflows/collect.yml` itself, every 15 minutes (plus one daily backfill run). The workflow collects data, commits the raw `data/` files, builds the static export, and pushes it to Pages in the same run.
+- **Vercel** — deployed via Vercel's Git integration on every push to `main`. The Vercel build is offline: it makes no network calls, because `bun run export` renders `frontend/dist/api/*.json` straight from the `data/` files already committed by `collect.yml`.
+
+Setup:
+
+1. `git remote add origin <your-repo-url>`
+2. `git push -u origin main` (this repo's current branch)
+3. In GitHub, Settings → Secrets and variables → Actions → **Variables**, add:
+   - `DATA_AUTHOR_NAME` / `DATA_AUTHOR_EMAIL` — set to the identity your own commits already use (`git log --format='%an <%ae>'`). This matters on a Vercel Hobby plan: Vercel only deploys commits authored by the Hobby team owner, and a `github-actions[bot]` author gets silently blocked from triggering a deploy. If these vars are unset, `collect.yml` falls back to the bot identity and data still gets committed, but Vercel won't redeploy on it.
+4. In GitHub, Settings → Pages, set Source to "GitHub Actions". Go to the Actions tab and run the "collect" workflow once manually (`workflow_dispatch`, with the daily/backfill branch) to populate `data/` and publish the first Pages deployment.
+5. In Vercel, import the repo as a new project:
+   - Framework Preset: **Other**
+   - Root Directory: repo root
+   - Install Command: `bun install --frozen-lockfile` (from `vercel.json`)
+   - Build Command: `VITE_STATIC=1 bun run build && bun run export` (from `vercel.json`)
+   - Output Directory: `frontend/dist` (from `vercel.json`)
+   - Ignore Build Step: uses `vercel.json`'s `ignoreCommand` (see below)
+6. Deploy. The site is live at both the Pages URL and the Vercel-assigned URL (or your own domain, once attached).
 
 Notes:
-- Cron schedule drift of 5-30 minutes at busy times is normal for GitHub Actions; don't expect exact 15-minute cadence.
-- GitHub auto-disables scheduled workflows on public repos after 60 days with no repo activity. The bot's own data commits likely count as activity, but this isn't documented by GitHub — if the schedule stops firing, re-enable it with one click from the Actions tab.
-- Every run commits `data/snapshots.jsonl`; the daily run (and manual dispatch) also commits the full `data/` directory and runs the incremental backfill.
+- Cron schedule drift of a few minutes at busy times is normal for GitHub Actions; don't expect an exact 15-minute cadence.
+- GitHub auto-disables scheduled workflows on public repos after 60 days with no repo activity. If the schedule ever stops firing, re-enable it with one click from the Actions tab.
+- Every run (15-minute and daily) commits the full `data/` directory — both deployed sites are built straight from it, so it must never go stale between commits.
 - Locally, `bun run cron` runs a single collection pass (useful for testing without waiting for the schedule). `bun run dev` is unaffected by any of this.
-- **No staleness alerting.** Nothing pages you if the schedule silently stops firing (rate limits, the 60-day auto-disable above, a broken run). Check `https://<your-username>.github.io/hl-cycles/api/health.json` for `lastRefresh`/`lastSnapshot` manually if the dashboard looks stale.
+- Vercel would otherwise build on every push from `collect.yml` (96/day at a 15-minute cadence) plus human pushes, which risks the Hobby plan's 100 deploys/day limit. `collect.yml` appends ` [vercel-skip]` to the data commit's subject on odd `github.run_number` runs (the daily/backfill run never skips); `vercel.json`'s `ignoreCommand` skips the Vercel build (exit 0) when the last commit subject contains that marker, and always builds (exit 1) otherwise, including every human push — thinning the automated pushes down to roughly every 30 minutes.
+- If a build log shows `--frozen-lockfile` rejecting the committed lockfile version, drop `--frozen-lockfile` from `installCommand` in `vercel.json` rather than pinning Bun by hand.
+- **No staleness alerting.** Nothing pages you if the schedule silently stops firing (rate limits, a broken run, the vars above going missing). Check `/api/health.json` on either deployed site for `lastRefresh`/`lastSnapshot` manually if the dashboard looks stale.
 
 ## Documentation
 

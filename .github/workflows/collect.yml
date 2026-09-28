@@ -19,7 +19,7 @@ jobs:
     outputs:
       export-ok: ${{ steps.export_check.outputs.exists }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -28,12 +28,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build frontend (static API mode)
-        env:
-          VITE_STATIC: "1"
-        run: bun run build
-
-      - name: Collect data and export static API
+      - name: Collect data
         id: cron
         continue-on-error: true
         run: |
@@ -45,48 +40,69 @@ jobs:
 
       - name: Commit collected data
         if: always()
+        env:
+          DATA_AUTHOR_NAME: ${{ vars.DATA_AUTHOR_NAME }}
+          DATA_AUTHOR_EMAIL: ${{ vars.DATA_AUTHOR_EMAIL }}
+          RUN_NUMBER: ${{ github.run_number }}
+          IS_BACKFILL: ${{ github.event.schedule == '5 0 * * *' || github.event_name == 'workflow_dispatch' }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          # Commits must be authored as the Hobby team owner (see vercel.json / SPEC.md 3.1) or
+          # Vercel won't deploy them on a private repo. Repo vars set to that identity; fall back
+          # to the bot identity (deploy just won't trigger) if the vars aren't set yet.
+          git config user.name "${DATA_AUTHOR_NAME:-github-actions[bot]}"
+          git config user.email "${DATA_AUTHOR_EMAIL:-41898283+github-actions[bot]@users.noreply.github.com}"
 
-          if [ "${{ github.event.schedule == '5 0 * * *' || github.event_name == 'workflow_dispatch' }}" = "true" ]; then
-            git add data/
-          else
-            git add data/snapshots.jsonl
-            # refreshAll() also rewrites the tracked candle/funding files, but the 15m path only
-            # wants the snapshot committed. Discard those unstaged changes so the tree is clean for
-            # `git pull --rebase` below — a dirty tree makes it refuse outright even with no real
-            # conflict. Nothing lost: those files get refetched incrementally next run either way.
-            git checkout -- data/ ':!data/snapshots.jsonl' 2>/dev/null || true
-          fi
+          # The site is built directly from these committed files (both Vercel's build and this
+          # workflow's own Pages export run `bun run export` against them), so every run — 15-minute
+          # or daily — commits all of data/, not just snapshots.jsonl.
+          git add data/
 
           if git diff --cached --quiet; then
             echo "commit: nothing to commit"
             exit 0
           fi
-          git commit -m "chore(data): collect $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # vercel.json's ignoreCommand skips the Vercel build for a data commit whose subject
+          # carries this marker (thins ~96/day 15-minute pushes down to roughly every 30 minutes,
+          # to stay under the Hobby plan's 100 deploys/day). The daily/backfill run always builds.
+          subject="chore(data): collect $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ "$IS_BACKFILL" != "true" ] && [ $((RUN_NUMBER % 2)) -eq 1 ]; then
+            subject="$subject [vercel-skip]"
+          fi
+          git commit -m "$subject"
 
           for attempt in 1 2 3; do
             if git pull --rebase --autostash && git push; then
               exit 0
             fi
+            git rebase --abort || true
             echo "commit: push attempt $attempt failed, retrying..."
             sleep $((attempt * 5))
           done
           echo "::error::commit: failed to push collected data after 3 attempts"
+          # Working tree may hold a locally-committed data/ that never made it to origin (and any
+          # abandoned rebase state) -- reset data/ to origin's so the build below still runs on
+          # clean, deployable data instead of a half-merged local commit.
+          git fetch origin main
+          git checkout origin/main -- data/
           exit 1
+
+      - name: Build static export
+        id: build_export
+        if: always()
+        run: VITE_STATIC=1 bun run build && bun run export
 
       - name: Verify static export exists
         id: export_check
         if: always()
         run: |
-          if [ -s frontend/dist/api/health.json ]; then
+          if [ "${{ steps.build_export.outcome }}" = "success" ] && [ -s frontend/dist/api/health.json ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         if: always() && steps.export_check.outputs.exists == 'true'
         with:
           path: frontend/dist
@@ -111,4 +127,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

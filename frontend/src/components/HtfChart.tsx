@@ -46,19 +46,19 @@ export function HtfChart({
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
-      layout: { background: { color: css("--surface-1") }, textColor: css("--text-3"), fontFamily: css("--font-mono"), fontSize: 11 },
+      layout: { background: { color: css("--surface-100") }, textColor: css("--ink-300"), fontFamily: css("--font-mono"), fontSize: 11 },
       grid: {
-        vertLines: { color: alpha(css("--line") || "#22262d", 0.6) },
-        horzLines: { color: alpha(css("--line") || "#22262d", 0.6) },
+        vertLines: { color: alpha(css("--border-subtle") || "#212328", 0.6) },
+        horzLines: { color: alpha(css("--border-subtle") || "#212328", 0.6) },
       },
       crosshair: { mode: 0 },
-      rightPriceScale: { mode: 1, borderColor: css("--line") },
+      rightPriceScale: { mode: 1, borderColor: css("--border-subtle") },
       // minBarSpacing default (0.5px) blocks fitContent() from showing full
       // history once there are more daily bars than px available (5000+ bars
       // since 2011 vs. ~1400px container) — it clamps to whatever fits at
       // 0.5px/bar instead of compressing further. Full history (DESIGN §6.4)
       // needs bars allowed to compress well below that.
-      timeScale: { timeVisible: false, borderColor: css("--line"), rightOffset: 4, minBarSpacing: 0.05 },
+      timeScale: { timeVisible: false, borderColor: css("--border-subtle"), rightOffset: 4, minBarSpacing: 0.05 },
       localization: {
         priceFormatter: fmtPrice,
         timeFormatter: (time: UTCTimestamp) => fmtDate((time as number) * 1000),
@@ -75,15 +75,15 @@ export function HtfChart({
     chart.priceScale("phase").applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
 
     candleRef.current = chart.addSeries(CandlestickSeries, {
-      upColor: css("--up"),
-      downColor: css("--down"),
-      wickUpColor: css("--up"),
-      wickDownColor: css("--down"),
+      upColor: css("--positive"),
+      downColor: css("--negative"),
+      wickUpColor: css("--positive"),
+      wickDownColor: css("--negative"),
       borderVisible: false,
     });
 
     smaRef.current = chart.addSeries(LineSeries, {
-      color: css("--text-2"),
+      color: css("--ink-200"),
       lineWidth: 1,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
@@ -154,7 +154,7 @@ export function HtfChart({
             time: (Math.floor(h / 86_400_000) * 86_400) as UTCTimestamp,
             position: "belowBar" as const,
             shape: "arrowUp" as const,
-            color: css("--text-2"),
+            color: css("--ink-200"),
             text: `halving ${new Date(h).getUTCFullYear()}`,
           }))
       );

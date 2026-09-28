@@ -8,7 +8,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { LtfPoint } from "../api";
+import type { LtfInterval, LtfPoint } from "../api";
 import { fmtDate, fmtTimestamp, fmtPrice, fmtApr, fmtBp, fmtCompactUsd, fmtScore, fmtPercentSigned } from "../format";
 import { STATE_VAR } from "../tokens";
 
@@ -29,11 +29,17 @@ export function LtfChart({
   interval,
   onIntervalChange,
   firstSnapshotAt,
+  coin = "BTC",
+  intervals = ["4h", "1h"],
+  note,
 }: {
   data: LtfPoint[];
-  interval: "4h" | "1h";
-  onIntervalChange: (i: "4h" | "1h") => void;
+  interval: LtfInterval;
+  onIntervalChange: (i: LtfInterval) => void;
   firstSnapshotAt: number | null;
+  coin?: string;
+  intervals?: readonly LtfInterval[];
+  note?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -49,11 +55,11 @@ export function LtfChart({
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
-      layout: { background: { color: css("--surface-1") }, textColor: css("--text-3"), fontFamily: css("--font-mono"), fontSize: 11 },
-      grid: { vertLines: { color: alpha(css("--line") || "#22262d", 0.6) }, horzLines: { color: alpha(css("--line") || "#22262d", 0.6) } },
+      layout: { background: { color: css("--surface-100") }, textColor: css("--ink-300"), fontFamily: css("--font-mono"), fontSize: 11 },
+      grid: { vertLines: { color: alpha(css("--border-subtle") || "#212328", 0.6) }, horzLines: { color: alpha(css("--border-subtle") || "#212328", 0.6) } },
       crosshair: { mode: 0 },
-      rightPriceScale: { borderColor: css("--line") },
-      timeScale: { timeVisible: true, borderColor: css("--line"), rightOffset: 4 },
+      rightPriceScale: { borderColor: css("--border-subtle") },
+      timeScale: { timeVisible: true, borderColor: css("--border-subtle"), rightOffset: 4 },
       // No chart-level localization.priceFormatter here: it wins over every
       // series' own priceFormat (see HtfChart, single pane, for that case),
       // and this chart has three panes needing three different formats
@@ -68,10 +74,10 @@ export function LtfChart({
     candleRef.current = chart.addSeries(
       CandlestickSeries,
       {
-        upColor: css("--up"),
-        downColor: css("--down"),
-        wickUpColor: css("--up"),
-        wickDownColor: css("--down"),
+        upColor: css("--positive"),
+        downColor: css("--negative"),
+        wickUpColor: css("--positive"),
+        wickDownColor: css("--negative"),
         borderVisible: false,
         priceFormat: { type: "custom", formatter: fmtPrice, minMove: 0.01 },
       },
@@ -80,7 +86,7 @@ export function LtfChart({
     emaRef.current = chart.addSeries(
       LineSeries,
       {
-        color: css("--text-2"),
+        color: css("--ink-200"),
         lineWidth: 1,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
@@ -96,12 +102,12 @@ export function LtfChart({
       { priceLineVisible: false, lastValueVisible: false, priceFormat: { type: "custom", formatter: fmtApr, minMove: 0.0001 } },
       1
     );
-    fundingRef.current.createPriceLine({ price: 0, color: css("--line-strong"), lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: "" });
+    fundingRef.current.createPriceLine({ price: 0, color: css("--border-strong"), lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: "" });
 
     oiRef.current = chart.addSeries(
       LineSeries,
       {
-        color: css("--text-1"),
+        color: css("--ink-100"),
         lineWidth: 1,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
@@ -172,7 +178,7 @@ export function LtfChart({
       data.map((d) => ({
         time: (d.t / 1000) as UTCTimestamp,
         value: d.fundingApr ?? 0,
-        color: (d.fundingApr ?? 0) >= 0 ? alpha(css("--up") || "#199e70", 0.6) : alpha(css("--down") || "#e66767", 0.6),
+        color: (d.fundingApr ?? 0) >= 0 ? alpha(css("--positive") || "#3ecb82", 0.6) : alpha(css("--negative") || "#f16060", 0.6),
       }))
     );
 
@@ -191,9 +197,10 @@ export function LtfChart({
     <section className="region">
       <div className="region-header">
         <span>
-          BTC-PERP · Hyperliquid · {interval}
-          <span className="segmented" style={{ marginLeft: 8, display: "inline-flex" }}>
-            {(["4h", "1h"] as const).map((i) => (
+          {coin}-PERP · Hyperliquid · {interval}
+          {note ? ` · ${note}` : ""}
+          <span className="segmented" role="tablist" style={{ marginLeft: 8, display: "inline-flex" }}>
+            {intervals.map((i) => (
               <button key={i} role="tab" aria-selected={interval === i} onClick={() => onIntervalChange(i)}>
                 {i}
               </button>

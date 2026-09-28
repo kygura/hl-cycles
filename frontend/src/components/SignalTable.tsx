@@ -3,7 +3,7 @@ import { fmtDate, fmtTimestamp, fmtPrice, fmtScore } from "../format";
 import { PHASE_TOKEN, STATE_TOKEN } from "../tokens";
 
 function tokenFor(frame: "HTF" | "LTF", label: string | null): string {
-  if (label == null) return "var(--text-3)";
+  if (label == null) return "var(--ink-300)";
   return frame === "HTF" ? PHASE_TOKEN[label as HtfPhase] : STATE_TOKEN[label as LtfState];
 }
 

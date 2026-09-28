@@ -6,7 +6,7 @@
 // and must not be re-fetched every 60s. Only /api/overview, /api/health (small)
 // and /api/signals are polled.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Health, type HtfResponse, type LtfResponse, type Overview, type Signal } from "./api";
+import { api, type Derivatives, type Health, type HtfResponse, type LtfResponse, type Overview, type Signal } from "./api";
 
 export type Status = "loading" | "ok" | "stale" | "error";
 
@@ -25,6 +25,8 @@ export function useDashboardData(htfInterval: "1d" | "1w", ltfInterval: "4h" | "
   const [ltfError, setLtfError] = useState(false);
   const [signals, setSignals] = useState<Signal[] | null>(null);
   const [signalsError, setSignalsError] = useState(false);
+  const [derivatives, setDerivatives] = useState<Derivatives | null>(null);
+  const [derivativesError, setDerivativesError] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const failedRef = useRef(false);
@@ -39,6 +41,14 @@ export function useDashboardData(htfInterval: "1d" | "1w", ltfInterval: "4h" | "
     } catch {
       setOverviewFailed(true);
       failedRef.current = true;
+    }
+    // Derivatives is small (~20KB, SPEC.md 3b.3), so it is fetched every poll tick alongside
+    // overview/health rather than gated behind an interval switch like htf/ltf.
+    try {
+      setDerivatives(await api.derivatives());
+      setDerivativesError(false);
+    } catch {
+      setDerivativesError(true);
     }
     try {
       const [htfSig, ltfSig] = await Promise.all([api.signals("HTF", 200), api.signals("LTF", 200)]);
@@ -113,6 +123,12 @@ export function useDashboardData(htfInterval: "1d" | "1w", ltfInterval: "4h" | "
     ltfError,
     signals,
     signalsError,
+    derivatives,
+    derivativesError,
+    retryDerivatives: () => {
+      setDerivativesError(false);
+      api.derivatives().then(setDerivatives).catch(() => setDerivativesError(true));
+    },
     retryHtf: () => {
       setHtfError(false);
       api.htf(htfInterval).then(setHtf).catch(() => setHtfError(true));

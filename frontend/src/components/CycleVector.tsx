@@ -26,7 +26,7 @@ export function CycleVector({
   const [hover, setHover] = useState<VectorPoint | null>(null);
 
   const hasPath = points.length >= 2;
-  const currentColor = current.phase ? PHASE_TOKEN[current.phase] : "var(--text-3)";
+  const currentColor = current.phase ? PHASE_TOKEN[current.phase] : "var(--ink-300)";
 
   return (
     <div>
@@ -39,30 +39,30 @@ export function CycleVector({
           <rect x={PAD + PLOT / 2} y={PAD + PLOT / 2} width={PLOT / 2} height={PLOT / 2} fill="var(--ph-accumulation)" opacity={0.08} />
 
           {/* quadrant labels */}
-          <text x={SIZE - PAD - 4} y={PAD + 12} textAnchor="end" fontSize="11" fill="var(--text-3)">
+          <text x={SIZE - PAD - 4} y={PAD + 12} textAnchor="end" fontSize="11" fill="var(--ink-300)">
             EUPHORIA
           </text>
-          <text x={PAD + 4} y={PAD + 12} fontSize="11" fill="var(--text-3)">
+          <text x={PAD + 4} y={PAD + 12} fontSize="11" fill="var(--ink-300)">
             DISTRIBUTION
           </text>
-          <text x={PAD + 4} y={SIZE - PAD - 4} fontSize="11" fill="var(--text-3)">
+          <text x={PAD + 4} y={SIZE - PAD - 4} fontSize="11" fill="var(--ink-300)">
             CAPITULATION
           </text>
-          <text x={SIZE - PAD - 4} y={SIZE - PAD - 4} textAnchor="end" fontSize="11" fill="var(--text-3)">
+          <text x={SIZE - PAD - 4} y={SIZE - PAD - 4} textAnchor="end" fontSize="11" fill="var(--ink-300)">
             ACCUMULATION
           </text>
 
           {/* axes */}
-          <line x1={PAD} y1={toY(0)} x2={SIZE - PAD} y2={toY(0)} stroke="var(--line-strong)" strokeWidth={1} />
-          <line x1={toX(0)} y1={PAD} x2={toX(0)} y2={SIZE - PAD} stroke="var(--line-strong)" strokeWidth={1} />
-          <line x1={toX(-0.5)} y1={toY(0) - 4} x2={toX(-0.5)} y2={toY(0) + 4} stroke="var(--line-strong)" strokeWidth={1} />
-          <line x1={toX(0.5)} y1={toY(0) - 4} x2={toX(0.5)} y2={toY(0) + 4} stroke="var(--line-strong)" strokeWidth={1} />
-          <line x1={toX(0) - 4} y1={toY(-0.5)} x2={toX(0) + 4} y2={toY(-0.5)} stroke="var(--line-strong)" strokeWidth={1} />
-          <line x1={toX(0) - 4} y1={toY(0.5)} x2={toX(0) + 4} y2={toY(0.5)} stroke="var(--line-strong)" strokeWidth={1} />
-          <text x={SIZE - PAD} y={SIZE - PAD + 14} textAnchor="end" fontSize="11" fill="var(--text-2)">
+          <line x1={PAD} y1={toY(0)} x2={SIZE - PAD} y2={toY(0)} stroke="var(--border-strong)" strokeWidth={1} />
+          <line x1={toX(0)} y1={PAD} x2={toX(0)} y2={SIZE - PAD} stroke="var(--border-strong)" strokeWidth={1} />
+          <line x1={toX(-0.5)} y1={toY(0) - 4} x2={toX(-0.5)} y2={toY(0) + 4} stroke="var(--border-strong)" strokeWidth={1} />
+          <line x1={toX(0.5)} y1={toY(0) - 4} x2={toX(0.5)} y2={toY(0) + 4} stroke="var(--border-strong)" strokeWidth={1} />
+          <line x1={toX(0) - 4} y1={toY(-0.5)} x2={toX(0) + 4} y2={toY(-0.5)} stroke="var(--border-strong)" strokeWidth={1} />
+          <line x1={toX(0) - 4} y1={toY(0.5)} x2={toX(0) + 4} y2={toY(0.5)} stroke="var(--border-strong)" strokeWidth={1} />
+          <text x={SIZE - PAD} y={SIZE - PAD + 14} textAnchor="end" fontSize="11" fill="var(--ink-200)">
             trend &#8594;
           </text>
-          <text x={PAD} y={PAD - 8} fontSize="11" fill="var(--text-2)">
+          <text x={PAD} y={PAD - 8} fontSize="11" fill="var(--ink-200)">
             heat &#8593;
           </text>
 
@@ -78,7 +78,7 @@ export function CycleVector({
                     y1={toY(prev.heat)}
                     x2={toX(p.trend)}
                     y2={toY(p.heat)}
-                    stroke="var(--text-2)"
+                    stroke="var(--ink-200)"
                     strokeWidth={1.5}
                     strokeLinejoin="round"
                     opacity={opacity}
@@ -87,7 +87,7 @@ export function CycleVector({
               })}
               {points.map((p, idx) =>
                 idx % 30 === 0 ? (
-                  <circle key={`m-${p.t}`} cx={toX(p.trend)} cy={toY(p.heat)} r={3} fill="none" stroke="var(--text-2)" strokeWidth={1} />
+                  <circle key={`m-${p.t}`} cx={toX(p.trend)} cy={toY(p.heat)} r={3} fill="none" stroke="var(--ink-200)" strokeWidth={1} />
                 ) : null
               )}
               {points.map((p) => (
@@ -103,15 +103,15 @@ export function CycleVector({
               ))}
             </>
           ) : (
-            <text x={SIZE / 2} y={SIZE / 2} textAnchor="middle" fontSize="12" fill="var(--text-3)">
+            <text x={SIZE / 2} y={SIZE / 2} textAnchor="middle" fontSize="12" fill="var(--ink-300)">
               not enough HTF history
             </text>
           )}
 
           {current.trend != null && current.heat != null && (
             <>
-              <circle cx={toX(current.trend)} cy={toY(current.heat)} r={9} fill="none" stroke="var(--surface-1)" strokeWidth={2} />
-              <circle cx={toX(current.trend)} cy={toY(current.heat)} r={7} fill={currentColor} stroke="var(--text-1)" strokeWidth={1} />
+              <circle cx={toX(current.trend)} cy={toY(current.heat)} r={9} fill="none" stroke="var(--surface-100)" strokeWidth={2} />
+              <circle cx={toX(current.trend)} cy={toY(current.heat)} r={7} fill={currentColor} stroke="var(--ink-100)" strokeWidth={1} />
             </>
           )}
         </svg>
@@ -123,8 +123,8 @@ export function CycleVector({
               left: `${(toX(current.trend) / SIZE) * 100}%`,
               top: `${(toY(current.heat) / SIZE) * 100}%`,
               transform: "translate(10px, -8px)",
-              fontSize: "var(--fs-xs)",
-              color: "var(--text-1)",
+              fontSize: "12px",
+              color: "var(--ink-100)",
               whiteSpace: "nowrap",
               pointerEvents: "none",
             }}

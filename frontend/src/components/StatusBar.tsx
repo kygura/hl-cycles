@@ -21,17 +21,17 @@ export function StatusBar({
   let color: string;
   if (status === "loading") {
     pillText = "loading…";
-    color = "var(--text-3)";
+    color = "var(--ink-300)";
   } else if (status === "error") {
     pillText = "● offline — retrying in 30s";
-    color = "var(--bad)";
+    color = "var(--negative)";
   } else if (refreshTs == null) {
     pillText = "not refreshed yet";
-    color = "var(--text-3)";
+    color = "var(--ink-300)";
   } else {
     const age = fmtRelativeAge(refreshTs);
     pillText = status === "stale" ? `● stale ${age}` : `● live ${age}`;
-    color = status === "stale" ? "var(--warn)" : "var(--ok)";
+    color = status === "stale" ? "var(--warning)" : "var(--positive)";
   }
 
   return (
@@ -44,7 +44,7 @@ export function StatusBar({
           {pillText}
         </span>
         {health?.lastError && (
-          <span className="pill mono" style={{ color: "var(--bad)" }} title={health.lastError}>
+          <span className="pill mono" style={{ color: "var(--negative)" }} title={health.lastError}>
             ● refresh error
           </span>
         )}

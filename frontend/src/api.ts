@@ -69,6 +69,10 @@ export type CycleInfo = {
   nextHalvingEstimate: number;
 };
 
+export type BiasLabel = "strongly bullish" | "bullish" | "neutral" | "bearish" | "strongly bearish";
+export type ComponentKey = "trend" | "heat" | "leverage" | "momentum";
+export type Component = { key: ComponentKey; score: number | null; word: string | null };
+
 export type Overview = {
   asOf: number;
   price: number;
@@ -86,8 +90,32 @@ export type Overview = {
     momentum: number | null;
     features: Record<string, number | null>;
   };
-  composite: { bias: number | null; summary: string };
+  composite: {
+    bias: number | null;
+    summary: string;
+    label: BiasLabel | null;
+    sentence: string;
+    components: Component[];
+  };
   crossVenueFunding: { venue: string; apr: number }[];
+};
+
+// SPEC.md 3b.3 / docs/MODEL.md 3.4. Mirrors backend/src/model/derivatives.ts's Derivatives type.
+export type Pt = [t: number, v: number];
+export type Derivatives = {
+  now: number;
+  windowMs: 604800000;
+  asOf: number | null;
+  firstSnapshot: number | null;
+  collecting: boolean;
+  premium: { points: Pt[]; last: number | null };
+  fundingApr: {
+    points: Pt[];
+    last: number | null;
+    predicted: { venue: string; short: string; apr: number }[];
+  };
+  oiUsd: { points: Pt[]; last: number | null; change24h: number | null };
+  volume24h: { points: Pt[]; last: number | null };
 };
 
 export type Health = {
@@ -102,6 +130,10 @@ export type Health = {
 
 export type HtfResponse = { candles: HtfPoint[]; halvings: number[] };
 export type LtfResponse = { points: LtfPoint[] };
+
+export type LtfInterval = "15m" | "1h" | "4h";
+export type Asset = { coin: string; sector: string };
+export type AssetsResponse = { assets: Asset[] };
 
 export type Signal =
   | { t: number; frame: "HTF"; from: HtfPhase | null; to: HtfPhase; price: number; trend: number | null; heat: number | null }
@@ -130,5 +162,11 @@ export const api = {
   signals: (frame: "HTF" | "LTF", limit = 200) =>
     getJson<SignalsResponse>(
       STATIC ? `./api/signals-${frame}.json` : `/api/signals?frame=${frame}&limit=${limit}`,
+    ),
+  assets: () => getJson<AssetsResponse>(STATIC ? "./api/assets.json" : "/api/assets"),
+  derivatives: () => getJson<Derivatives>(STATIC ? "./api/derivatives.json" : "/api/derivatives"),
+  assetLtf: (coin: string, interval: LtfInterval) =>
+    getJson<LtfResponse>(
+      STATIC ? `./api/ltf-${coin}-${interval}.json` : `/api/ltf?interval=${interval}&coin=${coin}`,
     ),
 };

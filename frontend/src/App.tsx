@@ -1,23 +1,48 @@
 import { useMemo, useState } from "react";
+import type { LtfInterval } from "./api";
 import { useDashboardData } from "./useDashboardData";
 import { StatusBar } from "./components/StatusBar";
-import { PhaseReadout } from "./components/PhaseReadout";
+import { MarketRead } from "./components/MarketRead";
+import { DerivativesPanel } from "./components/DerivativesPanel";
 import { CycleVector, type VectorPoint } from "./components/CycleVector";
 import { HtfChart } from "./components/HtfChart";
 import { LtfChart } from "./components/LtfChart";
 import { SignalTable } from "./components/SignalTable";
 import { PhaseGuide } from "./components/PhaseGuide";
+import { AssetsView } from "./components/AssetsView";
+
+const BTC_LTF_INTERVALS: readonly Extract<LtfInterval, "4h" | "1h">[] = ["4h", "1h"];
 
 function App() {
+  const [view, setView] = useState<"btc" | "assets">("btc");
   const [htfInterval, setHtfInterval] = useState<"1d" | "1w">("1d");
-  const [ltfInterval, setLtfInterval] = useState<"4h" | "1h">("4h");
+  const [ltfInterval, setLtfInterval] = useState<Extract<LtfInterval, "4h" | "1h">>("4h");
   const [signalFilter, setSignalFilter] = useState<"ALL" | "HTF" | "LTF">("ALL");
   const [guideOpen, setGuideOpen] = useState(false);
 
-  const { health, overview, status, htf, htfError, ltf, ltfError, signals, signalsError, retryHtf, retryLtf, retrySignals } = useDashboardData(
-    htfInterval,
-    ltfInterval
-  );
+  // LtfChart is generic over all 3 LtfInterval values (AssetsView also uses 15m), but the BTC
+  // view only offers 4h/1h -- narrow here instead of casting at the call site.
+  const handleLtfIntervalChange = (i: LtfInterval) => {
+    if (i === "4h" || i === "1h") setLtfInterval(i);
+  };
+
+  const {
+    health,
+    overview,
+    status,
+    htf,
+    htfError,
+    ltf,
+    ltfError,
+    signals,
+    signalsError,
+    derivatives,
+    derivativesError,
+    retryDerivatives,
+    retryHtf,
+    retryLtf,
+    retrySignals,
+  } = useDashboardData(htfInterval, ltfInterval);
 
   const vectorPoints: VectorPoint[] = useMemo(() => {
     if (!htf) return [];
@@ -51,12 +76,21 @@ function App() {
     <div>
       <StatusBar health={health} overview={overview} status={status} onOpenGuide={() => setGuideOpen(true)} />
       <div className="app">
+        <span className="segmented">
+          {(["btc", "assets"] as const).map((v) => (
+            <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>
+              {v === "btc" ? "BTC" : "Assets"}
+            </button>
+          ))}
+        </span>
+        {view === "assets" && <AssetsView />}
+        {view === "btc" && (
         <div className="app-grid">
-          <section className={`region span-7 ${status === "stale" ? "readout-top-warn" : ""}`}>
+          <section className="region span-7">
             <div className="region-header">
-              <span>Phase readout</span>
+              <span>Market read</span>
             </div>
-            <div className="region-body">{overview && <PhaseReadout overview={overview} />}</div>
+            <div className="region-body">{overview && <MarketRead overview={overview} stale={status === "stale"} />}</div>
           </section>
 
           <section className="region span-5">
@@ -70,6 +104,10 @@ function App() {
               />
             </div>
           </section>
+
+          <div className="span-12">
+            <DerivativesPanel data={derivatives} error={derivativesError} onRetry={retryDerivatives} />
+          </div>
 
           <div className="span-12">
             {htfError ? (
@@ -106,7 +144,13 @@ function App() {
                 </div>
               </section>
             ) : ltf ? (
-              <LtfChart data={ltf.points} interval={ltfInterval} onIntervalChange={setLtfInterval} firstSnapshotAt={health?.firstSnapshot ?? null} />
+              <LtfChart
+                data={ltf.points}
+                interval={ltfInterval}
+                onIntervalChange={handleLtfIntervalChange}
+                intervals={BTC_LTF_INTERVALS}
+                firstSnapshotAt={health?.firstSnapshot ?? null}
+              />
             ) : (
               <section className="region">
                 <div className="region-header">
@@ -133,6 +177,7 @@ function App() {
             )}
           </div>
         </div>
+        )}
       </div>
       <PhaseGuide
         open={guideOpen}

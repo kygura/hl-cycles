@@ -4,11 +4,11 @@
 //
 // Usage: bun run backfill  (from repo root or backend/)
 import { loadFunding, saveFunding, loadOiHistory, saveOiHistory, mergeByT } from "./store";
-import { backfillFunding, backfillOiHistory } from "./sources/binance";
+import { backfillFunding, backfillOiHistory, monthsBetween, FUNDING_HISTORY_START_YM } from "./sources/binance";
 import { FUNDING_GENESIS } from "./refresh";
+import type { FundingRow } from "./types";
 
 const HOUR = 3_600_000;
-const BINANCE_HISTORY_START = Date.parse("2020-01-01T00:00:00Z");
 const OI_HISTORY_START_DATE = "2020-09-01";
 // The OI step downloads ~2200 daily zips total; a run can be killed mid-way (process limits,
 // terminal closed, etc), so it checkpoints to disk every chunk instead of once at the end —
@@ -32,13 +32,32 @@ function* dateChunks(startDate: string, endDateExclusive: string, chunkDays: num
   }
 }
 
+function monthOf(t: number): string {
+  return new Date(t).toISOString().slice(0, 7);
+}
+
+// True only if every full calendar month from 2020-01 up to (not including) the month HL's own
+// history starts in already has at least one Binance-sourced row. A single "some row exists
+// before 2020-01-01" check (the old logic) would also pass after a run that got interrupted
+// partway through, silently leaving months in between un-backfilled forever. The boundary month
+// itself (the one HL history starts in) is intentionally excluded — it's fetched but only
+// partially kept (rows before beforeT), so its row count can legitimately be small or zero and
+// isn't a reliable "did this month finish" signal.
+function hasFullMonthCoverage(existing: FundingRow[], beforeT: number): boolean {
+  const binanceMonths = new Set(existing.filter((r) => r.src === "binance").map((r) => monthOf(r.t)));
+  for (const ym of monthsBetween(FUNDING_HISTORY_START_YM, monthOf(beforeT))) {
+    if (!binanceMonths.has(ym)) return false;
+  }
+  return true;
+}
+
 // Exported (not just run at the bottom of this file) so a cron module can call these
 // incremental steps directly without re-running this file as a script.
 export async function backfillFundingStep(): Promise<void> {
   const existing = await loadFunding();
   const hlTs = existing.filter((r) => r.src == null).map((r) => r.t);
   const beforeT = hlTs.length ? Math.min(...hlTs) : FUNDING_GENESIS;
-  const alreadyBackfilled = existing.some((r) => r.src === "binance" && r.t <= BINANCE_HISTORY_START);
+  const alreadyBackfilled = hasFullMonthCoverage(existing, beforeT);
 
   let merged = existing;
   if (alreadyBackfilled) {

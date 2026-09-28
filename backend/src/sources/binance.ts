@@ -22,7 +22,9 @@ const HOUR = 3_600_000;
 
 type FetchImpl = typeof fetch;
 
-const numStr = z.string().transform(Number).pipe(z.number().finite());
+// .min(1) matters: Number("") is 0, a valid finite number, so an empty CSV field would
+// otherwise silently become a real-looking zero instead of failing validation.
+const numStr = z.string().min(1).transform(Number).pipe(z.number().finite());
 
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -139,8 +141,14 @@ function latestAtOrBefore<T extends { t: number }>(sorted: T[], at: number): T |
   return idx === -1 ? null : sorted[idx]!;
 }
 
-// Splits each 8h funding event into hourly-equivalent rows (rate/intervalHours per hour, per
-// spec), attaching the Binance premium-index close for that hour. Exported for tests.
+// Splits each 8h funding event into hourly-equivalent rows, attaching the Binance premium-index
+// close for that hour. Alignment matches Hyperliquid's own convention (see docs/MODEL.md): a row
+// timestamped t is the payment/reading for the period [t-1h, t) — i.e. t is when the value became
+// known, not when the period started. calc_time T (paying for [T-8h, T)) therefore decomposes
+// into hourly rows at T-7h, T-6h, ..., T (NOT T, T+1h, ..., T+7h, which would date each hourly
+// slice 8h into the future it hadn't happened yet — a look-ahead bug). Same reasoning for premium:
+// the value attached to row t must come from the 1h kline that CLOSES at t (open_time t-1h), not
+// the kline opening at t (which covers [t, t+1h) and isn't known until t+1h). Exported for tests.
 export function expandFundingHourly(events: RawFundingEvent[], premiumRows: RawPremiumRow[]): FundingRow[] {
   const premiumSorted = [...premiumRows].sort((a, b) => a.t - b.t);
   const out: FundingRow[] = [];
@@ -148,22 +156,29 @@ export function expandFundingHourly(events: RawFundingEvent[], premiumRows: RawP
     if (ev.intervalHours <= 0) continue; // defensive: never divide by zero on a malformed row
     const hourlyRate = ev.rate / ev.intervalHours;
     for (let h = 0; h < ev.intervalHours; h++) {
-      const t = ev.t + h * HOUR;
-      const premiumRow = latestAtOrBefore(premiumSorted, t);
-      out.push({ t, rate: hourlyRate, premium: premiumRow?.premium ?? 0, src: "binance" });
+      const t = ev.t - (ev.intervalHours - 1 - h) * HOUR;
+      const premiumRow = latestAtOrBefore(premiumSorted, t - HOUR);
+      // null (not 0) when no premium kline is known yet for this hour — 0 is a real premium value
+      // and must never stand in for "missing". See FundingRow.premium in types.ts.
+      out.push({ t, rate: hourlyRate, premium: premiumRow?.premium ?? null, src: "binance" });
     }
   }
   return out;
 }
 
-// Last 5m row per UTC hour, per spec. Exported for tests.
+// Last 5m row per UTC hour, keyed by the hour's CLOSE (h+1h), not its start. The raw metrics rows
+// are 5-minute samples inside [h, h+1h) — e.g. a row at h:55 — so the true "last known OI for this
+// hour" isn't actually known until the hour closes at h+1h. Keying by h (as if it were known from
+// the hour's start) would let a same-hour lookup see a value up to ~55 minutes before it existed —
+// a look-ahead bug. Every other close-keyed series in this codebase (candles, funding above) uses
+// the same period-close convention. Exported for tests.
 export function downsampleHourlyOi(rows: RawOiRow[]): OiRow[] {
   const byHour = new Map<number, RawOiRow>();
   for (const r of [...rows].sort((a, b) => a.t - b.t)) {
-    byHour.set(Math.floor(r.t / HOUR) * HOUR, r); // ascending order -> last write per hour wins
+    byHour.set(Math.floor(r.t / HOUR) * HOUR + HOUR, r); // ascending order -> last write per hour wins
   }
   return [...byHour.entries()]
-    .map(([hourT, r]) => ({ t: hourT, oiCoins: r.oiCoins, oiUsd: r.oiUsd, src: "binance" as const }))
+    .map(([hourCloseT, r]) => ({ t: hourCloseT, oiCoins: r.oiCoins, oiUsd: r.oiUsd, src: "binance" as const }))
     .sort((a, b) => a.t - b.t);
 }
 
@@ -184,8 +199,10 @@ function metricsDayUrl(dateStr: string): string {
 // Downloads a zip, extracts its single CSV via the `unzip` CLI (no zip-parsing dependency
 // needed for this one-shot script), and cleans up the temp file. null on 404 (month/day not
 // published yet), throws on any other failure.
+const FETCH_TIMEOUT_MS = 20_000;
+
 async function fetchZipCsv(url: string, fetchImpl: FetchImpl): Promise<string | null> {
-  const res = await fetchImpl(url);
+  const res = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Binance Vision HTTP ${res.status} for ${url}`);
   const bytes = new Uint8Array(await res.arrayBuffer());
@@ -214,12 +231,12 @@ async function fetchZipCsvRetry(url: string, fetchImpl: FetchImpl, attempt = 0):
   }
 }
 
-function nextYm(ym: string): string {
+export function nextYm(ym: string): string {
   const [y, m] = ym.split("-").map(Number) as [number, number];
   return m >= 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
 }
 
-function* monthsBetween(startYm: string, endYmExclusive: string): Generator<string> {
+export function* monthsBetween(startYm: string, endYmExclusive: string): Generator<string> {
   let ym = startYm;
   while (ym < endYmExclusive) {
     yield ym;
@@ -236,7 +253,7 @@ function* daysBetween(startDate: string, endDateExclusive: string): Generator<st
   }
 }
 
-const FUNDING_HISTORY_START_YM = "2020-01";
+export const FUNDING_HISTORY_START_YM = "2020-01";
 
 // Fetches every published month from 2020-01 up to (and including) the month containing
 // `beforeT`, then filters to rows strictly before `beforeT` — the caller passes Hyperliquid's
@@ -260,7 +277,11 @@ export async function backfillFunding(beforeT: number, fetchImpl: FetchImpl = fe
 export type OiBackfillResult = { rows: OiRow[]; fetched: number; skipped404: number };
 
 // Fetches every daily metrics file in [fromDate, toDateExclusive) with bounded concurrency,
-// skipping 404s (not-yet-published days) and retrying once on transient failures.
+// skipping 404s (not-yet-published days) and retrying once on transient failures. A day that
+// still fails after the retry is NOT silently skipped like a 404: it's collected and the whole
+// call throws at the end, so the caller (backfillOiStep) never checkpoints past it — checkpointing
+// a chunk that's missing a day due to a transient network error would permanently skip that day
+// on every future run (the next run resumes from the checkpoint's last saved timestamp).
 export async function backfillOiHistory(
   fromDate: string,
   toDateExclusive: string,
@@ -271,6 +292,7 @@ export async function backfillOiHistory(
   const allRaw: RawOiRow[] = [];
   let fetched = 0;
   let skipped404 = 0;
+  const failedDays: string[] = [];
   let cursor = 0;
 
   async function worker() {
@@ -282,7 +304,8 @@ export async function backfillOiHistory(
       try {
         csv = await fetchZipCsvRetry(metricsDayUrl(day), fetchImpl);
       } catch (err) {
-        console.error(`skipping Binance metrics ${day}:`, err instanceof Error ? err.message : String(err));
+        console.error(`Binance metrics ${day} failed:`, err instanceof Error ? err.message : String(err));
+        failedDays.push(day);
         continue;
       }
       if (csv == null) {
@@ -295,5 +318,8 @@ export async function backfillOiHistory(
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, days.length) }, worker));
+  if (failedDays.length > 0) {
+    throw new Error(`Binance metrics fetch failed for ${failedDays.length} day(s): ${failedDays.sort().join(", ")}`);
+  }
   return { rows: downsampleHourlyOi(allRaw), fetched, skipped404 };
 }

@@ -28,12 +28,14 @@ async function readJsonArray<T>(path: string): Promise<T[]> {
   if (!existsSync(path)) return [];
   const raw = await readFile(path, "utf8").catch(() => "");
   if (!raw.trim()) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch {
-    return []; // corrupt file: never throw out of a load, keep serving
-  }
+  // A corrupt file must THROW, not silently return []: a caller that merges "existing" with
+  // freshly-fetched incremental rows and saves the result would otherwise overwrite years of
+  // real history with just the new rows, mistaking corruption for "no prior data". Throwing lets
+  // refreshAll's per-source try/catch record the error and leave the corrupt file untouched
+  // instead of destroying it.
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) throw new Error(`${path}: expected a JSON array, got ${typeof parsed}`);
+  return parsed as T[];
 }
 
 // Dedup by t, sort ascending. On a collision the LATER argument (incoming)

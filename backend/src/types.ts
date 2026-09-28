@@ -11,7 +11,10 @@ export type Candle = {
 export type FundingRow = {
   t: number;
   rate: number;
-  premium: number;
+  // null only occurs on Binance-backfilled rows for an hour with no matching 1h premium kline
+  // (e.g. Binance premium history starts later than funding history in some months) — never
+  // fabricated as 0, since 0 is a real premium value. Hyperliquid rows always have a real number.
+  premium: number | null;
   // Provenance: missing/undefined means Hyperliquid (the original source, before this field
   // existed). "binance" marks hourly-equivalent rows backfilled from Binance BTCUSDT perp
   // history for hours before Hyperliquid's funding history starts. See docs/MODEL.md.

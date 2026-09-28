@@ -400,6 +400,33 @@ describe("computeLtf synthetic series", () => {
     expect(points[9].rawState).toBe("deleveraging");
     expect(points[9].state).toBe("deleveraging"); // committed (run=2)
   });
+
+  // Snapshot OI (Hyperliquid, coins) and oi-history OI (Binance proxy, a different venue) are not
+  // the same series. Comparing "now" from one against "24h ago" from the other would report a
+  // change that's really just a cross-venue offset, not a real leverage move.
+  test("oiChange24h is null when 'now' and '24h-ago' OI come from different sources", () => {
+    const closes = Array.from({ length: 7 }, () => 100);
+    const candles = ltfCandles(closes, BAR); // bars 0..6, bar 6 closes at 7*BAR
+    const snapshots: Snapshot[] = [
+      {
+        t: 7 * BAR, // only near bar 6's close -> "now" OI comes from the snapshot
+        markPx: 100,
+        oraclePx: 100,
+        oiCoins: 1000,
+        oiUsd: 100_000,
+        funding: 0,
+        premium: 0,
+        dayNtlVlm: 0,
+        predicted: [],
+      },
+    ];
+    // 24h before bar 6's close (7*BAR) is 1*BAR (6 bars at 4h = 24h) — no snapshot there, only
+    // oi-history, so "24h-ago" OI comes from a different source than "now".
+    const oiHistory = [{ t: 1 * BAR, oiCoins: 900, oiUsd: 90_000, src: "binance" as const }];
+    const points = computeLtf(candles, [], snapshots, "4h", now, oiHistory);
+    expect(points[6].oiUsd).toBe(100_000); // "now" itself is still populated
+    expect(points[6].oiChange24h).toBeNull(); // but the 24h comparison is cross-source -> null
+  });
 });
 
 describe("composite", () => {

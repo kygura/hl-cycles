@@ -114,16 +114,21 @@ export function computeLtf(
     while (fj < fundingSorted.length && fundingSorted[fj].t < b.t) fj++;
     let k = fj;
     let sr = 0;
-    let sp = 0;
     let m = 0;
+    let sp = 0;
+    let mp = 0; // premium averages over only the rows that HAVE a premium (Binance rows can be null)
     while (k < fundingSorted.length && fundingSorted[k].t < b.t + BAR) {
       sr += fundingSorted[k].rate;
-      sp += fundingSorted[k].premium;
       m++;
+      const p = fundingSorted[k].premium;
+      if (p != null) {
+        sp += p;
+        mp++;
+      }
       k++;
     }
     fundingApr.push(m ? (sr / m) * 8760 : null);
-    premium.push(m ? sp / m : null);
+    premium.push(mp ? sp / mp : null);
   }
 
   const premiumZ: (number | null)[] = premium.map((p, i) => {
@@ -140,12 +145,13 @@ export function computeLtf(
   });
 
   // Snapshot near the bar wins; oi-history (Binance proxy) fills in only when no snapshot is near.
-  function oiAt(at: number): { oiCoins: number | null; oiUsd: number | null } {
+  type OiAt = { oiCoins: number | null; oiUsd: number | null; src: "snapshot" | "history" | null };
+  function oiAt(at: number): OiAt {
     const idx = latestInWindow(snapTs, at, 1_800_000);
-    if (idx != null) return { oiCoins: snapsSorted[idx].oiCoins, oiUsd: snapsSorted[idx].oiUsd };
+    if (idx != null) return { oiCoins: snapsSorted[idx].oiCoins, oiUsd: snapsSorted[idx].oiUsd, src: "snapshot" };
     const hIdx = latestInWindow(oiHistTs, at, OI_HISTORY_WINDOW_MS);
-    if (hIdx != null) return { oiCoins: oiHistSorted[hIdx].oiCoins, oiUsd: oiHistSorted[hIdx].oiUsd };
-    return { oiCoins: null, oiUsd: null };
+    if (hIdx != null) return { oiCoins: oiHistSorted[hIdx].oiCoins, oiUsd: oiHistSorted[hIdx].oiUsd, src: "history" };
+    return { oiCoins: null, oiUsd: null, src: null };
   }
 
   const oiUsd: (number | null)[] = [];
@@ -155,8 +161,11 @@ export function computeLtf(
     const nowOi = oiAt(closeT);
     oiUsd.push(nowOi.oiUsd);
     const thenOi = oiAt(closeT - 86_400_000);
+    // Snapshot OI (Hyperliquid, coins) and history OI (Binance proxy, a different venue/asset)
+    // are not the same series: a same-value discontinuity between them would show up as a fake
+    // OI change with no real leverage move behind it. Only compare two points from the same source.
     oiChange24h.push(
-      nowOi.oiCoins == null || thenOi.oiCoins == null || thenOi.oiCoins <= 0
+      nowOi.oiCoins == null || thenOi.oiCoins == null || thenOi.oiCoins <= 0 || nowOi.src !== thenOi.src
         ? null
         : nowOi.oiCoins / thenOi.oiCoins - 1,
     );

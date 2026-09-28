@@ -9,6 +9,7 @@ type FetchImpl = typeof fetch;
 
 const RETRY_DELAY_MS = 500;
 const GAP_MS = 200;
+const FETCH_TIMEOUT_MS = 20_000;
 
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,6 +34,7 @@ async function postInfo(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch (err) {
     if (attempt === 0) return postInfo(body, fetchImpl, attempt + 1);
@@ -49,8 +51,9 @@ async function postInfo(
   return res.json();
 }
 
-// Numeric strings from the HL API must parse to a finite number, not NaN/"".
-const numStr = z.string().transform(Number).pipe(z.number().finite());
+// Numeric strings from the HL API must parse to a finite number, not NaN/"" (Number("") is 0,
+// a valid finite number, so .min(1) is needed to actually reject empty fields).
+const numStr = z.string().min(1).transform(Number).pipe(z.number().finite());
 
 // --- candleSnapshot ---
 

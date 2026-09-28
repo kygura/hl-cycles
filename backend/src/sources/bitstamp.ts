@@ -5,8 +5,9 @@ import type { Candle } from "../types";
 
 type FetchImpl = typeof fetch;
 
-// Numeric strings from the Bitstamp API must parse to a finite number, not NaN/"".
-const numStr = z.string().transform(Number).pipe(z.number().finite());
+// Numeric strings from the Bitstamp API must parse to a finite number, not NaN/"" (Number("")
+// is 0, a valid finite number, so .min(1) is needed to actually reject empty fields).
+const numStr = z.string().min(1).transform(Number).pipe(z.number().finite());
 
 const OhlcRowSchema = z.object({
   timestamp: numStr,
@@ -26,6 +27,7 @@ const ResponseSchema = z.object({
 
 const DAY_SEC = 86400;
 const PAGE_LIMIT = 1000;
+const FETCH_TIMEOUT_MS = 20_000;
 
 export async function fetchBitstampDaily(
   startSec = 1315872000, // 2011-09-13, earliest confirmed Bitstamp data
@@ -37,7 +39,7 @@ export async function fetchBitstampDaily(
 
   for (;;) {
     const url = `https://www.bitstamp.net/api/v2/ohlc/btcusd/?step=${DAY_SEC}&start=${cursor}&limit=${PAGE_LIMIT}`;
-    const res = await fetchImpl(url);
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`Bitstamp HTTP ${res.status}`);
     const json = await res.json();
     const { ohlc } = ResponseSchema.parse(json).data;

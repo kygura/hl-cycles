@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -54,6 +54,14 @@ describe("candle store roundtrip", () => {
     await withTmpDataDir(async () => {
       const loaded = await loadCandles("hl-1d");
       expect(loaded).toEqual([]);
+    });
+  });
+
+  test("loadCandles throws on a corrupt file instead of silently returning [] (never mistake corruption for no prior data)", async () => {
+    await withTmpDataDir(async () => {
+      const dir = process.env.DATA_DIR!;
+      await writeFile(join(dir, "candles-hl-1h.json"), "{not valid json");
+      await expect(loadCandles("hl-1h")).rejects.toThrow();
     });
   });
 });

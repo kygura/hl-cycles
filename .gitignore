@@ -1,8 +1,7 @@
 node_modules/
 dist/
-data/*.json
-data/*.jsonl
 data/*.sqlite*
+data/*.tmp-*
 !data/.gitkeep
 .env
 .codegraph/

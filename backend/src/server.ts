@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { getState, mergeHtfDaily, startScheduler } from "./refresh";
-import { loadCandles, loadFunding, readSnapshots } from "./store";
+import { loadCandles, loadFunding, loadOiHistory, readSnapshots } from "./store";
 import { computeHtf, resampleWeekly, HALVINGS, type HtfPoint } from "./model/htf";
 import { computeLtf, type LtfInterval, type LtfPoint } from "./model/ltf";
 import { signals, overview } from "./model/composite";
@@ -27,21 +27,22 @@ async function getCache(): Promise<Cache> {
   const key = `${state.lastRefresh}:${state.lastSnapshot}`;
   if (cache && cache.key === key) return cache;
 
-  const [bitstamp, hl1d, hl4h, hl1h, funding, snapshots] = await Promise.all([
+  const [bitstamp, hl1d, hl4h, hl1h, funding, snapshots, oiHistory] = await Promise.all([
     loadCandles("bitstamp-1d"),
     loadCandles("hl-1d"),
     loadCandles("hl-4h"),
     loadCandles("hl-1h"),
     loadFunding(),
     readSnapshots(),
+    loadOiHistory(),
   ]);
 
   const now = Date.now();
   const daily = mergeHtfDaily(bitstamp, hl1d);
   const htf = computeHtf(daily, now);
   const ltf: Record<LtfInterval, LtfPoint[]> = {
-    "4h": computeLtf(hl4h, funding, snapshots, "4h", now),
-    "1h": computeLtf(hl1h, funding, snapshots, "1h", now),
+    "4h": computeLtf(hl4h, funding, snapshots, "4h", now, oiHistory),
+    "1h": computeLtf(hl1h, funding, snapshots, "1h", now, oiHistory),
   };
 
   cache = {

@@ -148,6 +148,8 @@ In words: a new phase is committed after it is the raw phase for 5 days in a row
 
 Use coins, not USD, for `oiChange24h`, so a price move alone does not look like new leverage. `rv42` and `rv42Pct` are for display only.
 
+**Provenance note.** `FundingRow.src` and `OiRow.src` mark rows backfilled from Binance BTCUSDT perp history (`data/oi-history.json`, and the pre-2023-05-12 rows of `data/funding.json`): missing `src` on a funding row means Hyperliquid, `src: "binance"` means the Binance proxy. This covers periods Hyperliquid itself has no data for — funding/premium before Hyperliquid's 2023-05-12 funding history starts, and all open interest before Hyperliquid snapshots exist (2026-09-27 on). It is a different venue: Binance's funding interval is 8h (expanded to hourly-equivalent rows here) versus Hyperliquid's 1h, and "premium" is Binance's own premium index, not Hyperliquid's. `oiUsd`/`oiChange24h` fall back to `oi-history.json` only when no Hyperliquid snapshot is near the bar; a real snapshot always wins.
+
 ### 2.3 Leverage `L` in [-1, 1]
 
 ```

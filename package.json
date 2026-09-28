@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "bun run --filter '*' dev",
     "test": "cd backend && bun test",
+    "backfill": "cd backend && bun run backfill",
     "build": "cd frontend && bun run build"
   }
 }

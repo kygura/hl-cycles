@@ -1,5 +1,5 @@
 // LTF (4h/1h) model. Pure functions only. See docs/MODEL.md section 2.
-import type { Candle, FundingRow, Snapshot } from "../types";
+import type { Candle, FundingRow, OiRow, Snapshot } from "../types";
 import { blend, clamp, emaSeeded, realizedVol, percentileRank, roc, rsiWilder, commitWithHysteresis } from "./indicators";
 
 export type LtfInterval = "4h" | "1h";
@@ -78,12 +78,15 @@ function rawStateOf(
   return "neutral";
 }
 
+// oiHistory (Binance-proxy hourly OI, see docs/MODEL.md) is optional and only fills in where
+// no snapshot is near the bar; snapshots always win when present.
 export function computeLtf(
   candles: Candle[],
   funding: FundingRow[],
   snapshots: Snapshot[],
   interval: LtfInterval,
   now: number,
+  oiHistory: OiRow[] = [],
 ): LtfPoint[] {
   const { BAR, W30, W90, BARS_PER_YEAR } = CONSTS[interval];
   const bars = candles.filter((x) => x.t + BAR <= now).sort((a, b) => a.t - b.t);
@@ -93,6 +96,9 @@ export function computeLtf(
   const fundingSorted = [...funding].sort((a, b) => a.t - b.t);
   const snapsSorted = [...snapshots].sort((a, b) => a.t - b.t);
   const snapTs = snapsSorted.map((s) => s.t);
+  const oiHistSorted = [...oiHistory].sort((a, b) => a.t - b.t);
+  const oiHistTs = oiHistSorted.map((o) => o.t);
+  const OI_HISTORY_WINDOW_MS = 7_200_000; // 2h: oi-history is hourly, tolerate one missing hour
 
   const ema50 = emaSeeded(c, 50);
   const rsi14 = rsiWilder(c, 14);
@@ -133,16 +139,27 @@ export function computeLtf(
     return (p - mean) / Math.max(Math.sqrt(variance), 0.0001);
   });
 
+  // Snapshot near the bar wins; oi-history (Binance proxy) fills in only when no snapshot is near.
+  function oiAt(at: number): { oiCoins: number | null; oiUsd: number | null } {
+    const idx = latestInWindow(snapTs, at, 1_800_000);
+    if (idx != null) return { oiCoins: snapsSorted[idx].oiCoins, oiUsd: snapsSorted[idx].oiUsd };
+    const hIdx = latestInWindow(oiHistTs, at, OI_HISTORY_WINDOW_MS);
+    if (hIdx != null) return { oiCoins: oiHistSorted[hIdx].oiCoins, oiUsd: oiHistSorted[hIdx].oiUsd };
+    return { oiCoins: null, oiUsd: null };
+  }
+
   const oiUsd: (number | null)[] = [];
   const oiChange24h: (number | null)[] = [];
   for (const b of bars) {
     const closeT = b.t + BAR;
-    const idxNow = latestInWindow(snapTs, closeT, 1_800_000);
-    oiUsd.push(idxNow == null ? null : snapsSorted[idxNow].oiUsd);
-    const oiCoinsNow = idxNow == null ? null : snapsSorted[idxNow].oiCoins;
-    const idxThen = latestInWindow(snapTs, closeT - 86_400_000, 1_800_000);
-    const oiCoinsThen = idxThen == null ? null : snapsSorted[idxThen].oiCoins;
-    oiChange24h.push(oiCoinsNow == null || oiCoinsThen == null || oiCoinsThen <= 0 ? null : oiCoinsNow / oiCoinsThen - 1);
+    const nowOi = oiAt(closeT);
+    oiUsd.push(nowOi.oiUsd);
+    const thenOi = oiAt(closeT - 86_400_000);
+    oiChange24h.push(
+      nowOi.oiCoins == null || thenOi.oiCoins == null || thenOi.oiCoins <= 0
+        ? null
+        : nowOi.oiCoins / thenOi.oiCoins - 1,
+    );
   }
 
   const lFunding = fundingApr.map((f) => (f == null ? null : Math.tanh((f - FUNDING_BASE_APR) / 0.1)));

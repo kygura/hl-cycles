@@ -16,7 +16,7 @@ import {
 import type { Candle } from "./types";
 
 const COIN = "BTC";
-const FUNDING_GENESIS = Date.parse("2023-05-12T00:00:00Z");
+export const FUNDING_GENESIS = Date.parse("2023-05-12T00:00:00Z");
 const SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000;
 
 type RefreshState = {

@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "bun --watch src/server.ts"
+    "dev": "bun --watch src/server.ts",
+    "backfill": "bun src/backfill.ts"
   },
   "dependencies": {
     "hono": "^4.13.9",

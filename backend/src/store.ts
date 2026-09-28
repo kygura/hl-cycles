@@ -4,7 +4,7 @@
 import { mkdir, rename, writeFile, readFile, appendFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Candle, FundingRow, Snapshot } from "./types";
+import type { Candle, FundingRow, OiRow, Snapshot } from "./types";
 
 export type CandleKey = "hl-1h" | "hl-4h" | "hl-1d" | "bitstamp-1d";
 
@@ -68,6 +68,18 @@ export async function loadFunding(): Promise<FundingRow[]> {
 
 export async function saveFunding(rows: FundingRow[]): Promise<void> {
   await atomicWrite(fundingPath(), JSON.stringify(rows));
+}
+
+function oiHistoryPath(): string {
+  return join(dataDir(), "oi-history.json");
+}
+
+export async function loadOiHistory(): Promise<OiRow[]> {
+  return readJsonArray<OiRow>(oiHistoryPath());
+}
+
+export async function saveOiHistory(rows: OiRow[]): Promise<void> {
+  await atomicWrite(oiHistoryPath(), JSON.stringify(rows));
 }
 
 function snapshotsPath(): string {

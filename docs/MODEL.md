@@ -138,11 +138,11 @@ In words: a new phase is committed after it is the raw phase for 5 days in a row
 | `ema50` | seed: `ema50[49] = mean(c[0..49])`; then `ema50[i] = c[i]·(2/51) + ema50[i-1]·(49/51)` | `i < 49` |
 | `rsi14` | Wilder. `d_k = c[k]-c[k-1]`, `g = max(d,0)`, `l = max(-d,0)`. Seed at `i = 14`: `ag = mean(g_1..g_14)`, `al = mean(l_1..l_14)`. Then `ag = (13·ag + g_i)/14`, same for `al`. `rsi = al == 0 ? 100 : 100 - 100/(1 + ag/al)` | `i < 14` |
 | `roc6` | `c[i] / c[i-6] - 1` | `i < 6` |
-| `fundingApr` | mean of `rate` over funding rows with `t ≤ row.t < t + BAR`, times 8760 | no rows in the bar |
-| `premium` | mean of `premium` over the same rows | no rows in the bar |
+| `fundingApr` | for bars ≥ 1h: mean of `rate` over funding rows with `t ≤ row.t < t + BAR`, times 8760. For bars < 1h (15m): forward-filled from the latest funding row with `row.t ≤ t`, since Hyperliquid funding rows are hourly | no rows in the bar (≥1h); no funding row within 1h before `t` (<1h) |
+| `premium` | for bars ≥ 1h: mean of `premium` over the same rows. For bars < 1h: forward-filled the same way as `fundingApr` | same as `fundingApr` |
 | `premiumZ` | `(premium[i] - μ) / max(σ, 0.0001)`, where μ and σ (population, divide by n) come from the non-null `premium` values in `[i-W30 .. i-1]` (the current bar is **excluded**) | `premium[i]` null, or fewer than `W30/2` non-null values in the window |
-| `oiUsd` | `oiUsd` of the latest snapshot with `snap.t ≤ t + BAR` and `snap.t ≥ t + BAR - 1_800_000` | no such snapshot |
-| `oiChange24h` | `oiCoinsNow / oiCoinsThen - 1`. `oiCoinsNow` is taken the same way as `oiUsd`. `oiCoinsThen` is the latest snapshot with `snap.t ≤ t + BAR - 86_400_000` and `snap.t ≥ t + BAR - 86_400_000 - 1_800_000` | either snapshot is missing, or `oiCoinsThen ≤ 0` |
+| `oiUsd` | `oiUsd` of the latest snapshot with `snap.t ≤ t + BAR` and `snap.t ≥ t + BAR - 3_600_000` | no such snapshot |
+| `oiChange24h` | `oiCoinsNow / oiCoinsThen - 1`. `oiCoinsNow` is taken the same way as `oiUsd`. `oiCoinsThen` is the latest snapshot with `snap.t ≤ t + BAR - 86_400_000` and `snap.t ≥ t + BAR - 86_400_000 - 3_600_000` | either snapshot is missing, or `oiCoinsThen ≤ 0` |
 | `rv42` | sample stdev (n-1) of the last 42 log returns `[i-41 .. i]`, times `sqrt(BARS_PER_YEAR)` | `i < 42` |
 | `rv42Pct` | pctRank of `rv42[i]` in `[i-W90+1 .. i]`, min `W30` values | not enough values |
 
@@ -234,6 +234,82 @@ If `bias` is `null`, the summary is `${HTF_TEXT}; ${LTF_TEXT}. Bias: unavailable
 
 Example: `HTF expansion: trend is up and not yet overheated; perps are crowded long (funding and premium hot). Bias: bullish (+0.34).`
 
+### 3.2 Market Read (aggregate, display only, Phase 3b)
+
+The Market Read panel adds **no new model math**. Its headline number is `bias` from section 3, and its four "why" scores are the existing raw scores: `trend = T` and `heat = H` of the last closed day (1.4, 1.5), and `leverage = L` and `momentum = M` of the last closed 4h bar (2.3, 2.4). These are exactly `overview.htf.trend`, `htf.heat`, `ltf.leverage` and `ltf.momentum`. Only `T`, `M` and `L` feed `bias`; `heat` is shown because it decides the phase, not because it moves the bias.
+
+Composition, restated for the panel:
+
+```
+bias  = clamp( blend([0.6·T, 0.4·M]) − bLev(L) )        // section 3
+label = biasLabel(bias)                                // section 3, null when bias is null
+phase = committed HTF phase (1.7)                      // the ONE phase word
+```
+
+`sentence` is the summary without its bias clause (the number and label are already the headline):
+
+```
+sentence = `${HTF_TEXT[htfPhase]}; ${LTF_TEXT[ltfState]}.`      // tables in 3.1, htfPhase null → HTF_TEXT_NULL
+summary  = `${sentence} Bias: ${biasText}.`                     // byte-identical to 3.1
+```
+
+Implement as `readSentence(htfPhase, ltfState)` in `backend/src/model/composite.ts`; `summaryText` calls it, so the existing summary tests pin both.
+
+### 3.3 Component words
+
+Pure function `componentWord(key, score)` in `backend/src/model/composite.ts`, `key ∈ {"trend","heat","leverage","momentum"}`, returns `string | null`. `null` score → `null` word (the UI prints `—`). Check the rows top to bottom; the first match wins. Comparisons are exactly as written (`≥` includes the boundary, `>` excludes it), so every boundary value maps to one word.
+
+| key | rule 1 | rule 2 | rule 3 | rule 4 | otherwise |
+|---|---|---|---|---|---|
+| `trend` (T) | `≥ 0.25` → `uptrend` | `> −0.25` → `sideways` | — | — | `downtrend` |
+| `heat` (H) | `≥ 0.75` → `hot` | `≥ 0.20` → `warm` | `> −0.35` → `mild` | `> −0.60` → `cool` | `cold` |
+| `leverage` (L) | `≥ 0.50` → `crowded` | `≥ 0.20` → `building` | `> −0.25` → `balanced` | `> −0.50` → `shorting` | `squeezable` |
+| `momentum` (M) | `≥ 0.60` → `surging` | `≥ 0.30` → `rising` | `> −0.30` → `flat` | `> −0.60` → `falling` | `plunging` |
+
+Where the thresholds come from (so the words never contradict a label on screen):
+
+- trend ±0.25 = the `expansion`/`markdown` rules in 1.6.
+- heat 0.75 = `euphoria`, 0.20 = `distribution`, −0.35 = `accumulation`, −0.60 = `capitulation` (1.6).
+- leverage 0.50 = `crowded_long`, −0.25 = `short_squeeze_fuel`, −0.50 = `crowded_short` (2.5); 0.20 is the one display-only cut, so "building" appears before the state flips to crowded. `crowded` means crowded **long**; crowded short reads `squeezable`.
+- momentum ±0.30 = `healthy_uptrend`/`downtrend` (2.5); ±0.60 are display-only cuts for the extremes.
+
+`overview.composite.components` is always the 4-element array in the order trend, heat, leverage, momentum: `{ key, score, word }`.
+
+### 3.4 Derivatives series (`/api/derivatives`, display only, Phase 3b)
+
+Built by a pure `derivatives(snapshots, funding, now)` in `backend/src/model/derivatives.ts` from stored data only: `data/snapshots.jsonl` (`Snapshot`) and `data/funding.json` (`FundingRow`). Window `W = 7 · 86_400_000`, anchored at `now` (request time; build time for the static export). Only rows with `now − W < t ≤ now` are used.
+
+Units, verified against the stored data: `FundingRow.rate` and `Snapshot.funding` are **hourly** Hyperliquid rates (e.g. `0.0000125` = the resting rate), so an hourly rate annualizes as `× 8760`. `Snapshot.predicted[].rate` is **per venue interval**, so it annualizes as `rate × 8760 / intervalHours` (Binance and Bybit report `intervalHours: 8`, HL reports `1`). This is the formula `/api/overview.crossVenueFunding` already uses; both must call one exported helper, `predictedApr(p)`.
+
+| series | per point | source |
+|---|---|---|
+| `premium` | `markPx / oraclePx − 1` (fraction; the UI prints bp) | snapshots |
+| `fundingApr` | `rate × 8760` | funding rows (hourly, already one per hour) |
+| `oiUsd` | `oiUsd` | snapshots |
+| `volume24h` | `dayNtlVlm` (Hyperliquid's rolling 24h notional, USD) | snapshots |
+
+Mark-vs-oracle is used on purpose rather than `Snapshot.premium` (Hyperliquid's impact-price premium), because it is what the panel labels.
+
+**Downsampling.** Snapshots are bucketed by UTC hour (`floor(t / 3_600_000)`) and only the **last** snapshot in each bucket is kept, with its own `t`. So each series has at most 168 points (169 at a boundary). Funding rows are already hourly and are not bucketed. A snapshot with `oraclePx ≤ 0` gives no `premium` point. Non-finite values are dropped.
+
+**Gaps.** Points are not interpolated or filled. The client breaks the line where consecutive points are more than `7_200_000` ms apart (DESIGN.md 6.9).
+
+**`last`.** The value of the last point in the series, or `null` if the series is empty.
+
+**OI 24h change** (coins, like `oiChange24h` in 2.2, so a price move alone is not new leverage):
+
+```
+now  = the last snapshot in the window
+then = the latest snapshot s with  now.t − 86_400_000 − 3_600_000 ≤ s.t ≤ now.t − 86_400_000
+change24h = now.oiCoins / then.oiCoins − 1      // null if there is no now or no then, or then.oiCoins ≤ 0
+```
+
+The 1 h tolerance is the same as the BTC snapshot OI window in SPEC.md 3.4. `then` is searched in the raw snapshots, before bucketing.
+
+**Predicted funding.** From the last snapshot in the window, in the order `HlPerp`, `BinPerp`, `BybitPerp`, then any other venue in stored order. Short labels are `HlPerp → HL`, `BinPerp → BIN`, `BybitPerp → BYB`, and any unknown venue keeps its stored name. If there is no snapshot in the window, the list is `[]`.
+
+**Collecting.** `collecting = (number of hourly snapshot buckets in the window) < 24`. So the panel says "collecting" until at least a day's worth of hourly coverage exists. `firstSnapshot` is the `t` of the earliest snapshot in the whole file (not just the window), or `null`.
+
 ## 4. `/api/overview` feature keys
 
 `htf.features` (values for the last closed day, all `number | null`):
@@ -241,6 +317,8 @@ Example: `HTF expansion: trend is up and not yet overheated; perps are crowded l
 
 `ltf.features` (values for the last closed bar of the requested or default interval, all `number | null`):
 `close, ema50, rsi14, roc6, fundingApr, premium, premiumZ, oiUsd, oiChange24h, rv42, rv42Pct, lFunding, lPremium, lOi, mEma, mRsi, mRoc`
+
+`composite` (Phase 3b, additive, existing fields unchanged): `bias`, `summary`, plus `label` (`BiasLabel | null`), `sentence` (3.2) and `components` (3.3).
 
 `htf.phase` is the committed phase. `ltf.state` is the committed state. `trend`, `heat`, `leverage` and `momentum` are the raw scores of that day or bar. Signal rows use the committed labels and the scores on the switch day or bar (`price` = that close).
 

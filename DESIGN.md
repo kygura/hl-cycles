@@ -21,16 +21,20 @@ Reading order (what the eye hits first to last): phase readout → cycle vector 
 │ StatusBar  hl-cycles · BTC  $109,842.00  · as of 2026-09-27 19:45 UTC │  40px
 │            [● live 12m ago]                    [?] Phase guide         │
 ├────────────────────────────────────────┬───────────────────────────────┤
-│ PhaseReadout                           │ CycleVector                   │
-│  HTF EXPANSION  ·  LTF healthy_uptrend │   heat ↑                      │
-│  trend  +0.62 ████████░░               │     ┌────┬────┐               │
-│  heat   +0.31 ██████░░░░               │     │dist│euph│  ● now        │
-│  leverage +0.18  momentum +0.44        │     ├────┼────┤  ~ path 90d   │
-│  bias  +0.48  "Expansion; leverage..." │     │capi│accu│               │
+│ MarketRead                             │ CycleVector                   │
+│  +0.34 bullish   EXPANSION             │   heat ↑                      │
+│  [capitulation ━━━━━━━━┃━━━━ euphoria] │     ┌────┬────┐               │
+│  HTF expansion: trend is up…; short-…  │     │dist│euph│  ● now        │
+│  TREND     HEAT     LEVERAGE  MOMENTUM │     ├────┼────┤  ~ path 90d   │
+│  ▬▬ uptrend ▬ warm  ▬ building ▬ rising│     │capi│accu│               │
 │  cycle  d+890 · 61% · next 2028-04     │     └────┴────┘               │
-│  funding  HL 9.1% · BIN 11.2% · BYB..  │        trend →                │
-│  ▸ features                             │                               │
+│  ▸ features                             │        trend →                │
 ├────────────────────────────────────────┴───────────────────────────────┤
+│ DerivativesPanel  Hyperliquid derivatives · BTC-PERP   [24h][7d]       │
+│  PREMIUM         FUNDING APR       OPEN INTEREST      VOLUME 24H        │  ~120px
+│  −3.1 bp         +9.9%   ▸HL ▸BIN  3.06B  −1.2% 24h   2.00B             │
+│  ╱╲_╱‾╲_         ‾‾╲__╱‾ ▸BYB      ╱‾‾╲__╱            _╱‾╲_╱            │
+├────────────────────────────────────────────────────────────────────────┤
 │ HtfChart  BTC/USD daily · log        [1d][1w]   ◼accu ◼exp ◼euph ...    │
 │  ─────────────────────────────────────────────────────────────────────  │  480px
 │  (candles + SMA200 + phase bands + halving markers)                     │
@@ -44,53 +48,61 @@ Reading order (what the eye hits first to last): phase readout → cycle vector 
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-Column spans at 1440: PhaseReadout 7/12, CycleVector 5/12. Charts and table span 12.
+Column spans at 1440: MarketRead 7/12, CycleVector 5/12. DerivativesPanel, charts and table span 12.
 
 ### 2.2 At 1024
 
-Same grid, PhaseReadout 7/12 and CycleVector 5/12 still fit (vector min 320px square). Chart heights unchanged. Page padding 16px. Feature detail table in PhaseReadout collapses by default (it already does at 1440, see 6.2).
+Same grid, MarketRead 7/12 and CycleVector 5/12 still fit (vector min 320px square). DerivativesPanel drops to a 2×2 sparkline grid. Chart heights unchanged. Page padding 16px. Feature detail table in MarketRead collapses by default (it already does at 1440, see 6.2).
 
 ### 2.3 Below 900 (stacked)
 
-Single column in this order: StatusBar, PhaseReadout, CycleVector (max 360px wide, centered), HtfChart (360px), LtfChart (price 240 / funding 90 / OI 90), SignalTable. Table drops the `scores` column and keeps time, frame, from→to, price. No horizontal page scroll; the table itself may scroll horizontally.
+Single column in this order: StatusBar, MarketRead, CycleVector (max 360px wide, centered), DerivativesPanel (sparklines one per row), HtfChart (360px), LtfChart (price 240 / funding 90 / OI 90), SignalTable. Table drops the `scores` column and keeps time, frame, from→to, price. No horizontal page scroll; the table itself may scroll horizontally.
 
 ### 2.4 Region rules
 
-- Every region is a `section` with a one-line header row: title (13px, `--text-2`), optional right-aligned controls (toggles/filters). Header height 32px. No card shadows, no rounded hero boxes: regions are separated by a 1px `--line` border, not by elevation.
-- Regions are flat panels on `--surface-1`; the page background is `--surface-0`. Charts sit on `--surface-1` with no inner border.
-- Spacing scale: 4 / 8 / 12 / 16 / 24 only.
+- Every region is a `section.region` panel (3.6): 1px `--border` on `--surface-100`, radius 10, no shadow. Header row: title in `label` style `--ink-300`, optional right-aligned controls; padding 12/16; `--border-subtle` rule below.
+- Page background `--surface-000`; panels sit on it separated by the 16px gutter, not by elevation. Charts fill the panel body on `--surface-100` with no inner border.
+- Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 only (`--space-1`…`--space-6`).
 
-## 3. Colour tokens
+## 3. Colour tokens ("Ledger" design system, dark)
 
-Dark theme is primary and the only theme in v1. A light theme is out of scope; tokens are named so one can be added later without touching components.
+Dark theme is primary and the only theme. Tokens live as CSS custom properties on `:root` in `theme.css`; components reference them only via `var(--…)` (or `css("--…")` in charts), never raw hex. A light theme stays out of scope; the names allow one later.
 
-### 3.1 Surfaces and text
+### 3.1 Surfaces, borders, ink, accent
 
 | Token | Value | Use |
 |---|---|---|
-| `--surface-0` | `#0b0d10` | page background |
-| `--surface-1` | `#0e1013` | panels, chart background (validator surface) |
-| `--surface-2` | `#15181d` | table header, hover rows, popover |
-| `--line` | `#22262d` | region borders, table rules, grid lines (charts use it at 60% alpha) |
-| `--line-strong` | `#343a44` | focused control border, crosshair |
-| `--text-1` | `#e6e8eb` | primary numbers and labels |
-| `--text-2` | `#9aa3ad` | secondary labels, units, table headers |
-| `--text-3` | `#5f6873` | disabled, placeholders, axis text |
-| `--accent` | `#3987e5` | focus rings, active toggle, links. Same hue as `accumulation`; acceptable because they never sit side by side as data. |
+| `--surface-000` | `#0b0c0e` | page background |
+| `--surface-100` | `#131417` | panels (`.region`), chart background |
+| `--surface-200` | `#1b1d21` | table header, hover rows, inputs, segmented track, popover, crosshair label |
+| `--surface-300` | `#25272c` | active segmented button, gauge midpoint |
+| `--border-subtle` | `#212328` | inner rules (region header rule, table rows), chart grid lines (at 60% alpha) |
+| `--border` | `#2e3037` | panel border (1px), control borders |
+| `--border-strong` | `#40434c` | focused/hovered control border, crosshair, zero lines, gauge ticks |
+| `--ink-100` | `#f2f2f4` | primary figures and labels |
+| `--ink-200` | `#c2c4ca` | secondary text, sentence, sparkline stroke |
+| `--ink-300` | `#8b8e97` | eyebrows, table headers, axis text, units, disabled |
+| `--accent` | `#5b84f0` | active state, links, component score bars, sparkline last-point dot |
+| `--accent-strong` | `#7c9cf5` | focus ring (`outline: 2px solid; outline-offset: 2px`), link hover |
+| `--accent-subtle` | `#16213f` | selected table row |
 
-### 3.2 Direction (candles, deltas)
+Rename map from v1 (every usage in `theme.css`, `HtfChart.tsx`, `LtfChart.tsx`, `CycleVector.tsx`, inline styles, and the hex fallbacks passed to `alpha()`): `--surface-0`→`--surface-000`, `--surface-1`→`--surface-100`, `--surface-2`→`--surface-200`, `--line`→`--border-subtle`, `--line-strong`→`--border-strong`, `--text-1`→`--ink-100`, `--text-2`→`--ink-200`, `--text-3`→`--ink-300`. Old names are deleted, not aliased.
 
-| Token | Value |
-|---|---|
-| `--up` | `#199e70` |
-| `--down` | `#e66767` |
-| `--flat` | `#9aa3ad` |
+### 3.2 Semantic (direction, status)
 
-Validated (dark surface `#0e1013`): passes lightness, chroma, contrast; CVD ΔE 6.5 (protan) is in the warn band — acceptable because candles also encode direction by shape (close above/below open) and price deltas print a sign (`+`/`−`).
+| Token | Value | Replaces | Use |
+|---|---|---|---|
+| `--positive` | `#3ecb82` | `--up`, `--ok` | up candles, positive deltas (OI 24h change), live dot |
+| `--positive-subtle` | `#0f2419` | — | live status pill background |
+| `--negative` | `#f16060` | `--down`, `--bad` | down candles, negative deltas, offline dot |
+| `--negative-subtle` | `#2a1414` | — | offline status pill background |
+| `--warning` | `#e0a23d` | `--warn` | stale dot, stale top border on Market Read, "collecting" pill text |
+| `--warning-subtle` | `#2b2110` | — | stale / collecting pill background |
+| `--flat` | `#8b8e97` (= `--ink-300`) | `--flat` | zero deltas |
 
-Candle rendering: up body `--up`, down body `--down`, wicks same colour as body, borders off. Do not use hollow candles.
+Candle rendering is unchanged: up body `--positive`, down body `--negative`, wicks same colour, borders off, no hollow candles. Deltas always print a sign, so direction never rests on colour alone. Score bars (Market Read) are NOT coloured by sign: positive heat or leverage is not "good", so they use `--accent`.
 
-### 3.3 HTF phase palette (6, cyclic order)
+### 3.3 HTF phase palette (6, cyclic order) — unchanged
 
 Order below is cycle order; adjacent pairs are what the eye compares on the chart's phase bands.
 
@@ -103,11 +115,11 @@ Order below is cycle order; adjacent pairs are what the eye compares on the char
 | markdown | `--ph-markdown` | `#9085e9` | violet, cooling decline |
 | capitulation | `--ph-capitulation` | `#d55181` | magenta, pain/flush |
 
-Validator result (dark, cyclic adjacency incl. capitulation→accumulation): lightness PASS, chroma PASS, contrast PASS, CVD adjacent worst 6.7 ΔE (euphoria↔distribution, deutan) = warn band, normal-vision adjacent worst 13.0 (same pair, floor is 15). All-pairs cannot pass for six hues on any palette (documented in the dataviz reference: cap is three). **Consequence, binding:** phase colour is always accompanied by a text label — band labels on the HTF chart (see 7.1), the phase word in the readout badge, the quadrant labels in CycleVector, the `from→to` words in the table. No component may communicate phase by colour alone.
+Validator result (dark, cyclic adjacency incl. capitulation→accumulation): lightness PASS, chroma PASS, contrast PASS, CVD adjacent worst 6.7 ΔE (euphoria↔distribution, deutan) = warn band, normal-vision adjacent worst 13.0 (same pair, floor is 15). All-pairs cannot pass for six hues on any palette (documented in the dataviz reference: cap is three). **Consequence, binding:** phase colour is always accompanied by a text label — band labels on the HTF chart (see 7.1), the phase word in Market Read, the quadrant labels in CycleVector, the `from→to` words in the table. No component may communicate phase by colour alone.
 
-Band alpha on the chart: fill at 14% alpha over `--surface-1`; legend swatches and badges at 100%.
+Band alpha on the chart: fill at 14% alpha over `--surface-100`; legend swatches and badges at 100%. The phase palette deliberately does NOT follow the Ledger semantic colours: `--ph-expansion` stays `#199e70` even though `--positive` is `#3ecb82`.
 
-### 3.4 LTF state palette (7)
+### 3.4 LTF state palette (8) — unchanged
 
 LTF states are status-like, shown as a badge with the state text, and as a thin state strip under the LTF price pane. Two states are deliberately grey.
 
@@ -118,38 +130,58 @@ LTF states are status-like, shown as a badge with the state text, and as a thin 
 | short_squeeze_fuel | `--st-squeeze` | `#c98500` | opportunity/warning |
 | crowded_short | `--st-crowded-short` | `#d55181` | risk: shorts over-extended |
 | deleveraging | `--st-deleveraging` | `#9085e9` | flush in progress |
+| downtrend | `--st-downtrend` | `#736aa8` | orderly decline (added after v1, MODEL 2.5) |
 | neutral | `--st-neutral` | `#9aa3ad` | grey |
 | insufficient_data | `--st-nodata` | `#5f6873` | grey, badge drawn with a dashed border |
 
 Same colour family as phases on purpose: red = crowded/hot in both frames, green = healthy in both, amber = heat/fuel, violet = decline/deleverage, magenta = pain. The user learns one vocabulary. Text label always present.
 
-### 3.5 Status colours (StatusBar only)
+### 3.5 Status pill (StatusBar)
 
-| Token | Value | Use |
-|---|---|---|
-| `--ok` | `#199e70` | live dot |
-| `--warn` | `#c98500` | stale (>30m) |
-| `--bad` | `#e66767` | backend unreachable |
+`live` = `--positive` dot on `--positive-subtle`; `stale` = `--warning` on `--warning-subtle`; `offline` = `--negative` on `--negative-subtle`. Pill: radius 4, padding 2px 8px, text `--ink-100`, `figure-sm`. Always paired with the word.
 
-Always paired with a word (`live`, `stale`, `offline`).
+### 3.6 Spacing, radius, elevation
+
+| Token | Value |
+|---|---|
+| `--space-1` … `--space-6` | `4px` `8px` `12px` `16px` `24px` `32px` |
+| `--radius-sm` / `--radius-md` / `--radius-lg` | `4px` / `6px` / `10px` |
+
+- Panel (`.region`): `background: var(--surface-100); border: 1px solid var(--border); border-radius: var(--radius-lg);` no `box-shadow` anywhere in the app. `overflow: hidden` so charts clip to the radius.
+- Region header: padding `12px 16px`, `border-bottom: 1px solid var(--border-subtle)`, text in `label` style (4.1), `--ink-300`; right-aligned controls allowed.
+- Region body: padding `16px`. Grid gutter `16px`, page padding `24px` (unchanged).
+- Controls (buttons, `<select>`, segmented): radius `--radius-md`, 1px `--border`, background `--surface-200`, text `--ink-200`; hover border `--border-strong`; focus-visible ring `--accent-strong`.
+- Segmented control: track `--surface-200` radius 6 padding 2; active button `--surface-300` + `--ink-100`; inactive `--ink-300`. This replaces the v1 accent underline (section 8).
+- Tables: header row `--surface-200`, `label` style; row rule `--border-subtle`; hover `--surface-200`; selected `--accent-subtle`.
+- Pills (status, "collecting"): radius `--radius-sm`.
 
 ## 4. Typography
 
-```
---font-ui:   ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
---font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
+Loaded from Google Fonts in `frontend/index.html` `<head>` (no npm font package):
+
+```html
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 ```
 
-| Token | Size / line | Use |
-|---|---|---|
-| `--fs-xs` | 11px / 16 | axis labels, table meta, units |
-| `--fs-sm` | 12px / 18 | table body, feature rows, legend, tooltips |
-| `--fs-md` | 13px / 20 | region titles, body copy in explainer |
-| `--fs-lg` | 16px / 22 | LTF state badge text, composite summary line |
-| `--fs-xl` | 22px / 28 | HTF phase word in readout, price in StatusBar |
-| `--fs-2xl` | 32px / 36 | composite bias number |
+```
+--font-ui:   "Inter", ui-sans-serif, system-ui, sans-serif;
+--font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+```
 
-Rules: every number is `--font-mono` with `font-variant-numeric: tabular-nums`. Labels are `--font-ui`. Phase/state words are `--font-mono`, uppercase for HTF phases (`EXPANSION`), lowercase snake_case exactly as the API returns for LTF states (`healthy_uptrend`) — this keeps the table and the badge literally searchable against the API. No letter-spacing tricks. Weight: 400 everywhere, 600 only for the HTF phase word and the bias number.
+Six roles, each a utility class in `theme.css` (`.t-body`, `.t-label`, `.t-heading`, `.t-figure-lg`, `.t-figure`, `.t-figure-sm`) backed by size/line-height tokens:
+
+| Role | Font | Size / line | Weight | Extra | Use |
+|---|---|---|---|---|---|
+| `body` | UI | 14 / 20 | 400 | — | default `body`, sentence, words, explainer copy |
+| `label` | UI | 12 / 16 | 500 | `letter-spacing: 0.02em; text-transform: uppercase` | eyebrows, region headers, table headers, sparkline titles |
+| `heading` | UI | 17 / 24 | 600 | — | drawer title, empty-state headings |
+| `figure-lg` | mono | 20 / 26 | 500 | tabular | bias number, phase word, sparkline last values, StatusBar price |
+| `figure` | mono | 14 / 20 | 400 | tabular | table figures, feature values, LTF state badge |
+| `figure-sm` | mono | 12 / 16 | 400 | tabular | component scores, deltas, axis-adjacent labels, predicted-funding tick labels, pills |
+
+Rules: every live figure is `--font-mono` with `font-variant-numeric: tabular-nums` (`.mono` keeps working and now means Plex Mono). Labels and prose are `--font-ui`. Phase/state words stay mono: uppercase for HTF phases (`EXPANSION`), lowercase snake_case exactly as the API returns for LTF states (`healthy_uptrend`). The v1 `--fs-*` tokens are deleted; map `--fs-xs`/`--fs-sm` → `figure-sm` or `label`, `--fs-md` → `body`, `--fs-lg` → `body`, `--fs-xl`/`--fs-2xl` → `figure-lg`. Chart canvases keep `fontSize: 11` (functional identity, 9) and pick up Plex Mono through `--font-mono`.
 
 ## 5. Number and date formatting (single `format.ts` module)
 
@@ -170,41 +202,39 @@ Rules: every number is `--font-mono` with `font-variant-numeric: tabular-nums`. 
 
 All axes on charts use the same functions (lightweight-charts `localization.priceFormatter` and `timeFormatter`).
 
-## 6. Components (7)
+## 6. Components
 
-Keep to these seven. Formatters, the API client and the theme are modules, not components.
+Keep to these (6.2 MarketRead replaced PhaseReadout; 6.8–6.9 added in Phase 3b). Formatters, the API client and the theme are modules, not components.
 
 ### 6.1 `StatusBar`
 
 Props: `health: Health | null`, `overview: Overview | null`, `status: "loading" | "ok" | "stale" | "error"`, `onOpenGuide()`.
 
-Content, left to right: wordmark `hl-cycles`, `BTC` and `overview.price`, `as of {overview.asOf}` UTC, status pill (`● live 12m ago` / `● stale 47m ago` / `● offline — retrying`), right: `? Phase guide` button. 40px tall, `--surface-1`, bottom border `--line`.
+Content, left to right: wordmark `hl-cycles`, `BTC` and `overview.price`, `as of {overview.asOf}` UTC, status pill (`● live 12m ago` / `● stale 47m ago` / `● offline — retrying`), right: `? Phase guide` button. 40px tall, `--surface-100`, bottom border `--border-subtle`.
 
 Status derivation (in the data hook, not in the component): `error` if `/api/overview` fails; `stale` if `now − health.lastRefresh > 30 min`; otherwise `ok`.
 
-### 6.2 `PhaseReadout`
+### 6.2 `MarketRead` (replaces `PhaseReadout`, Phase 3b)
 
-Props: `overview: Overview` (the whole `/api/overview` object). Nothing else.
-
-Layout (two columns internal at ≥1024, one below):
+File `components/MarketRead.tsx`; `PhaseReadout.tsx` is deleted. Props: `overview: Overview`, `stale: boolean`. All words and the sentence come from the API (`overview.composite.*`, docs/MODEL.md 3.2–3.3); the component computes nothing but pixel positions.
 
 ```
-HTF  EXPANSION                     LTF  healthy_uptrend
-trend  +0.62  [────────●──]         leverage  +0.18  [────●─────]
-heat   +0.31  [──────●────]         momentum  +0.44  [──────●───]
-
-BIAS  +0.48   "Expansion with healthy leverage; trend leads."
-cycle  day 890 since 2024-04-20 · 61.2% of cycle
-funding  HL +9.1%  Binance +11.2%  Bybit +10.4%
-▸ features (12)
++0.34  bullish                                   EXPANSION ■
+[■■■■■■■■■■■■■■■■■■■■■■■■┃■■■■■■■■■■]   −1 ··· 0 ··· +1
+HTF expansion: trend is up and not yet overheated; short-term uptrend with balanced leverage.
+TREND            HEAT             LEVERAGE         MOMENTUM
+[──|███──]       [──|█───]        [──|██───]       [──|███──]
+uptrend  +0.62   warm  +0.31      building +0.24   rising +0.44
+cycle  day 890 since 2024-04-20 · 61.2% · next ~2028-04
+▸ features
 ```
 
-- HTF phase word: `--fs-xl`, 600, colour `--ph-*`, preceded by a 10px square swatch. LTF state: `--fs-lg`, mono, colour `--st-*`, in a 1px-bordered badge (dashed border for `insufficient_data`).
-- Score bars: a 120px `[-1, +1]` track with a centre tick at 0 and a 6px marker. Track `--line`, marker `--text-1`. Not coloured by value — the sign in the number does that job.
-- Bias: `--fs-2xl`, signed 2dp; the `summary` string beside it, `--fs-lg`, `--text-1`, max two lines, then ellipsis with full text in `title`.
-- Cycle: `htf.cycle.daysSinceHalving`, `lastHalving` as date, `cycleProgress` as percent. Progress also drawn as a 4px bar spanning the readout width, fill `--text-3`, with four faint ticks at 25/50/75/100%.
-- Funding: one line, `crossVenueFunding[]` mapped `venue apr`, HL first if present, others in API order. If empty: `funding —`.
-- `▸ features`: collapsed by default; a `<details>` element (native, no JS). Body is a two-column mono table of `htf.features` then `ltf.features`, key as given by the API (`--text-2`), value 2dp or `—`. Because feature keys and units are not part of the contract (see 12), the UI renders them raw; that is acceptable for a learning tool.
+- **Headline row.** Left: `composite.bias` as `figure-lg` `--ink-100` via `fmtScore` (`—` if null), then `composite.label` in `body` `--ink-200` (`unavailable` if null). Right: the ONE phase word = `htf.phase` uppercased, `figure-lg`, colour `PHASE_TOKEN[phase]`, followed by a 10px square swatch; `—` in `--ink-300` if null.
+- **Gauge** (plain HTML/CSS, no SVG needed). Track: full width, 8px tall, radius 4, `background: linear-gradient(90deg, var(--ph-capitulation) 0%, var(--surface-300) 50%, var(--ph-euphoria) 100%)`. Scale is linear: `left% = (clamp(bias, −1, 1) + 1) / 2 × 100`. Ticks: 1px × 12px `--border-strong` at the label boundaries −0.5, −0.15, +0.15, +0.5 (`left%` 25, 42.5, 57.5, 75) and a 1px × 16px `--ink-300` tick at 0. Marker: 3px × 20px `--ink-100` bar, radius 2, centred on `left%`, 1px `--surface-000` outline so it reads over both gradient ends; omitted when bias is null. End captions `−1` / `0` / `+1` in `figure-sm` `--ink-300` under the track. Element is `role="meter" aria-valuemin=-1 aria-valuemax=1 aria-valuenow={bias} aria-valuetext="{label} {fmtScore(bias)}"`. The gradient is only a mnemonic for "bearish end ↔ bullish end"; the number and label carry the reading (3.3 rule).
+- **Sentence.** `composite.sentence` (ONE sentence), `body` `--ink-200`, single line with ellipsis, full `composite.summary` in `title`.
+- **Why row.** CSS grid, 4 equal columns (2×2 below 900), order trend, heat, leverage, momentum from `composite.components`. Each cell: eyebrow (`label` style, `--ink-300`); a 64px × 6px track `--surface-300` radius 3 with a 1px `--border-strong` centre tick, filled from the centre to the score in `--accent` (width `|score|/2 × 100%`, left or right of centre by sign); below, the word in `body` `--ink-100` and the score in `figure-sm` `--ink-300` (`fmtScore`). Null score → empty track, word `—`. `title` on the cell lists the sub-scores from `features` so every number stays reachable: trend `tMayer / tSlope / tCross`, heat `hMayer / hDrawdown / hRoc365`, leverage `lFunding / lPremium / lOi`, momentum `mEma / mRsi / mRoc`, each `fmtScore`.
+- **Cycle** line and the **`▸ features` `<details>`** move over unchanged from v1 PhaseReadout (same content, `figure-sm` values, `--ink-300` keys). The v1 funding line is dropped here: DerivativesPanel shows the predicted funding (6.8). The LTF state badge is dropped: the sentence names the LTF state and the LTF chart's state strip/tooltip show it.
+- **Stale:** `stale` → panel gets a 1px `--warning` top border (replaces `readout-top-warn`).
 
 ### 6.3 `CycleVector`  (the signature piece — plain SVG)
 
@@ -218,13 +248,13 @@ SVG spec, viewBox `0 0 320 320`, `preserveAspectRatio="xMidYMid meet"`, CSS size
   - top-left (trend−, heat+): `--ph-distribution`
   - bottom-left (trend−, heat−): `--ph-capitulation`
   - bottom-right (trend+, heat−): `--ph-accumulation`
-  Quadrant labels in the outer corners, `--fs-xs`, `--text-3`, uppercase: `EUPHORIA`, `DISTRIBUTION`, `CAPITULATION`, `ACCUMULATION`. `expansion` and `markdown` are transitional (near the x axis, moving) and are labelled once in the legend line under the SVG: "expansion / markdown = moving right / left across the axis".
+  Quadrant labels in the outer corners, `figure-sm`, `--ink-300`, uppercase: `EUPHORIA`, `DISTRIBUTION`, `CAPITULATION`, `ACCUMULATION`. `expansion` and `markdown` are transitional (near the x axis, moving) and are labelled once in the legend line under the SVG: "expansion / markdown = moving right / left across the axis".
   These quadrant hints are pedagogical, not the classifier; the actual phase of each point comes from the API and colours the point.
-- Axes: two 1px lines through 0 in `--line-strong`; ticks at ±0.5 as 4px marks; axis titles `trend →` (bottom right) and `heat ↑` (top left) in `--fs-xs` `--text-2`.
-- Trailing path: a `<polyline>` through the 90 points, stroke `--text-2`, 1.5px, `stroke-linejoin: round`, opacity ramp is not available on a single polyline, so draw it as up to 89 `<line>` segments with opacity `0.15 + 0.85 * i/88` (oldest faintest). Every 30th point gets a 3px hollow circle marker in `--text-2` so speed of movement is legible (dense markers = slow, sparse = fast).
-- Current point: 7px circle filled with `--ph-{current.phase}`, 2px `--surface-1` ring, then a 1px `--text-1` outer ring. Label to the right: `{trend} , {heat}` in mono `--fs-xs`.
+- Axes: two 1px lines through 0 in `--border-strong`; ticks at ±0.5 as 4px marks; axis titles `trend →` (bottom right) and `heat ↑` (top left) in `figure-sm` `--ink-200`.
+- Trailing path: a `<polyline>` through the 90 points, stroke `--ink-200`, 1.5px, `stroke-linejoin: round`, opacity ramp is not available on a single polyline, so draw it as up to 89 `<line>` segments with opacity `0.15 + 0.85 * i/88` (oldest faintest). Every 30th point gets a 3px hollow circle marker in `--ink-200` so speed of movement is legible (dense markers = slow, sparse = fast).
+- Current point: 7px circle filled with `--ph-{current.phase}`, 2px `--surface-100` ring, then a 1px `--ink-100` outer ring. Label to the right: `{trend} , {heat}` in mono `figure-sm`.
 - Hover (optional, cheap): a transparent 12px hit circle per point; on hover show a tooltip `2026-07-14 · EXPANSION · trend +0.41 · heat +0.12`. Keyboard: not required for v1.
-- Empty (`points.length < 2`): draw axes and quadrants, no path, centred `--text-3` text `not enough HTF history`.
+- Empty (`points.length < 2`): draw axes and quadrants, no path, centred `--ink-300` text `not enough HTF history`.
 
 Region header: `Cycle vector · trend vs heat · last 90 days`.
 
@@ -233,18 +263,18 @@ Region header: `Cycle vector · trend vs heat · last 90 days`.
 Props: `data: HtfResponse` (`candles`, `halvings`), `interval: "1d" | "1w"`, `onIntervalChange(i)`.
 
 lightweight-charts v5 setup:
-- One chart, one pane. `rightPriceScale.mode = Logarithmic`. `timeScale.timeVisible = false`. Background `--surface-1`, grid lines `--line` at 60% alpha, text `--text-3`, crosshair `--line-strong` with `mode: Normal`.
+- One chart, one pane. `rightPriceScale.mode = Logarithmic`. `timeScale.timeVisible = false`. Background `--surface-100`, grid lines `--border-subtle` at 60% alpha, text `--ink-300`, crosshair `--border-strong` with `mode: Normal`.
 - Series, in draw order:
   1. **Phase band** — `HistogramSeries` on an overlay price scale (`priceScaleId: "phase"`, `scaleMargins: { top: 0, bottom: 0 }`), every bar `value: 1`, `color` = phase colour at 14% alpha, `priceLineVisible: false`, `lastValueVisible: false`. Because histogram bars are contiguous and full-height, this reads as a continuous background band. Fill from `candles[i].phase`.
-  2. **Candles** — `CandlestickSeries`, `--up` / `--down`, `borderVisible: false`.
-  3. **SMA200** — `LineSeries`, 1.5px, `--text-2`, `lastValueVisible: false`, `crosshairMarkerVisible: false`. From `candles[i].sma200` (skip nulls).
-  4. **Halvings** — `createSeriesMarkers` on the candle series: one marker per timestamp in `halvings`, `position: "belowBar"`, `shape: "arrowUp"`, `color: --text-2`, `text: "halving YYYY"`. This is a marker, not a full-height line; v5 has no built-in vertical line. Acceptable for v1; a custom primitive drawing a 1px dashed `--line-strong` vertical is a follow-up, not required.
+  2. **Candles** — `CandlestickSeries`, `--positive` / `--negative`, `borderVisible: false`.
+  3. **SMA200** — `LineSeries`, 1.5px, `--ink-200`, `lastValueVisible: false`, `crosshairMarkerVisible: false`. From `candles[i].sma200` (skip nulls).
+  4. **Halvings** — `createSeriesMarkers` on the candle series: one marker per timestamp in `halvings`, `position: "belowBar"`, `shape: "arrowUp"`, `color: --ink-200`, `text: "halving YYYY"`. This is a marker, not a full-height line; v5 has no built-in vertical line. Acceptable for v1; a custom primitive drawing a 1px dashed `--border-strong` vertical is a follow-up, not required.
 - Initial visible range: full history. `fitContent()` after data load and on interval change.
 - Weekly: same code path, `?interval=1w`.
-- Interval toggle: two-segment control `[1d][1w]` in the region header, active segment `--accent` text and border, inactive `--text-2`.
-- Legend row in the header: six phase swatches + words (`--fs-xs`), always visible; this is the phase legend for the bands.
-- Band labels (binding, see 3.3): when a contiguous phase run is wider than 72px on screen, print the phase word at `--fs-xs` `--text-2` at the top-left of the run. Implement as absolutely positioned HTML labels computed from `timeScale.timeToCoordinate()` on `subscribeVisibleLogicalRangeChange`; skip runs that would overlap. If this proves fiddly, minimum viable: the tooltip always names the phase and the legend exists.
-- Tooltip (HTML overlay, `subscribeCrosshairMove`, top-left of chart, single line, mono `--fs-sm`):
+- Interval toggle: two-segment control `[1d][1w]` in the region header, segmented style per 3.6.
+- Legend row in the header: six phase swatches + words (`figure-sm`), always visible; this is the phase legend for the bands.
+- Band labels (binding, see 3.3): when a contiguous phase run is wider than 72px on screen, print the phase word at `figure-sm` `--ink-200` at the top-left of the run. Implement as absolutely positioned HTML labels computed from `timeScale.timeToCoordinate()` on `subscribeVisibleLogicalRangeChange`; skip runs that would overlap. If this proves fiddly, minimum viable: the tooltip always names the phase and the legend exists.
+- Tooltip (HTML overlay, `subscribeCrosshairMove`, top-left of chart, single line, mono `figure-sm`):
   `2021-04-14 · O 63,523 H 64,863 L 61,319 C 62,970 · SMA200 34,120 · Mayer 1.85 · DD −2.9% · trend +0.71 heat +0.88 · EUPHORIA · src hl`
   Null fields print `—`. Phase word coloured with its token.
 - Crosshair sync: none. HTF crosshair is independent from LTF by design (different time domains).
@@ -255,11 +285,11 @@ lightweight-charts v5 setup:
 Props: `data: LtfResponse` (`points`), `interval: "4h" | "1h"`, `onIntervalChange(i)`, `firstSnapshotAt: number | null` (see 12).
 
 v5 multi-pane, one chart, three panes sharing the time scale (native pane time sync; no manual crosshair code):
-- Pane 0 (price, 300px): `CandlestickSeries` (`--up`/`--down`) + `LineSeries` ema50 (1.5px, `--text-2`). Linear scale. Under it, a 6px **state strip**: `HistogramSeries` on an overlay scale with `scaleMargins: { top: 0.97, bottom: 0 }`, `value: 1`, colour = `--st-{point.state}` at 70% alpha. This is the only place LTF state history is visible on a chart; text is available via tooltip.
-- Pane 1 (funding APR, 110px): `HistogramSeries` from `fundingApr`, colour `--up` when ≥ 0 else `--down`, 60% alpha, plus a zero line (`createPriceLine` at 0, `--line-strong`). Pane title label `funding APR` top-left, `--fs-xs` `--text-3`.
-- Pane 2 (OI USD, 110px): `LineSeries` from `oiUsd`, 1.5px, `--text-1`; nulls are gaps (`whitespace` points). Pane label `open interest`.
+- Pane 0 (price, 300px): `CandlestickSeries` (`--positive`/`--negative`) + `LineSeries` ema50 (1.5px, `--ink-200`). Linear scale. Under it, a 6px **state strip**: `HistogramSeries` on an overlay scale with `scaleMargins: { top: 0.97, bottom: 0 }`, `value: 1`, colour = `--st-{point.state}` at 70% alpha. This is the only place LTF state history is visible on a chart; text is available via tooltip.
+- Pane 1 (funding APR, 110px): `HistogramSeries` from `fundingApr`, colour `--positive` when ≥ 0 else `--negative`, 60% alpha, plus a zero line (`createPriceLine` at 0, `--border-strong`). Pane title label `funding APR` top-left, `figure-sm` `--ink-300`.
+- Pane 2 (OI USD, 110px): `LineSeries` from `oiUsd`, 1.5px, `--ink-100`; nulls are gaps (`whitespace` points). Pane label `open interest`.
 - Time axis visible on the bottom pane only.
-- **OI empty state:** if every `oiUsd` in the visible data is null → hide the OI series and render an HTML overlay centred in pane 2: `collecting OI snapshots since {firstSnapshotAt as YYYY-MM-DD}` (or `collecting OI snapshots — no snapshot yet` if null), `--fs-sm` `--text-3`. If only the early part is null (the normal case) → no overlay; the line simply starts later. Same rule for the funding pane when all `fundingApr` are null, text `no funding data`.
+- **OI empty state:** if every `oiUsd` in the visible data is null → hide the OI series and render an HTML overlay centred in pane 2: `collecting OI snapshots since {firstSnapshotAt as YYYY-MM-DD}` (or `collecting OI snapshots — no snapshot yet` if null), `figure-sm` `--ink-300`. If only the early part is null (the normal case) → no overlay; the line simply starts later. Same rule for the funding pane when all `fundingApr` are null, text `no funding data`.
 - Interval toggle `[4h][1h]` in the header. Header title: `BTC-PERP · Hyperliquid · {interval}`.
 - Tooltip (single line, top-left of pane 0):
   `2026-09-27 16:00 · O 109,120 H 110,004 L 108,877 C 109,842 · ema50 108,300 · RSI 61.2 · funding +9.1% · premium +12 bp · OI 4.2B (+3.1% 24h) · lev +0.18 mom +0.44 · healthy_uptrend`
@@ -281,7 +311,7 @@ Columns (fixed widths in `ch`, mono):
 - HTF rows show date only (daily signals); LTF rows show date and time.
 - `from` and `to` each preceded by an 8px swatch of their phase/state colour; the words are the identity, the swatch is secondary. If `from` is null (first-ever label), print `—`.
 - Row key: `${frame}-${t}`.
-- Header sticky; body scrolls inside a 420px max-height container; zebra off; hover row `--surface-2`.
+- Header sticky; body scrolls inside a 420px max-height container; zebra off; hover row `--surface-200`.
 - Filter: three-segment control in the region header, same style as interval toggles.
 - Empty: `no signals yet — labels are recorded when they change`.
 - Below 900: hide `scores` column.
@@ -290,7 +320,7 @@ Columns (fixed widths in `ch`, mono):
 
 Props: `open: boolean`, `onClose()`, `current: { phase, state }` (to highlight the current rows).
 
-A right-side drawer, 400px wide, full height, `--surface-2`, 1px left border, opened from StatusBar `? Phase guide`. Closes on Escape, on backdrop click, on the `×`. `role="dialog"`, `aria-modal`, focus moved to the drawer heading on open and returned on close. Plain text content, `--fs-md`, mono headings. It exists so the user learns cyclicality; keep each item to one sentence, and add nothing that MODEL.md does not back.
+A right-side drawer, 400px wide, full height, `--surface-200`, 1px left border, opened from StatusBar `? Phase guide`. Closes on Escape, on backdrop click, on the `×`. `role="dialog"`, `aria-modal`, focus moved to the drawer heading on open and returned on close. Plain text content, `body`, mono headings. It exists so the user learns cyclicality; keep each item to one sentence, and add nothing that MODEL.md does not back.
 
 Content, in this order:
 
@@ -320,16 +350,49 @@ Content, in this order:
 
 **Cycle clock** — one sentence: halvings (2012, 2016, 2020, 2024) cut new supply in half; prior cycles peaked roughly 12–18 months after a halving and bottomed roughly a year after that, so `days since halving` and `% of cycle` are context, not a prediction.
 
+### 6.8 `DerivativesPanel` (Phase 3b)
+
+File `components/DerivativesPanel.tsx`. Props: `data: Derivatives | null`, `error: boolean`, `onRetry()`. Data is `/api/derivatives` (`derivatives.json` static), contract in SPEC.md 3b.3. Span 12, placed right after the MarketRead/CycleVector row.
+
+- Header: `Hyperliquid derivatives · BTC-PERP`; right side a `[24h][7d]` segmented control (default `7d`; `24h` is a client-side slice `t ≥ lastT − 86_400_000` of the same points, no refetch) and, when `data.collecting`, a pill `collecting since {fmtDate(data.firstSnapshot)}` (`--warning` on `--warning-subtle`, or `collecting — no snapshot yet` if `firstSnapshot` is null).
+- Body: CSS grid of 4 cells (2×2 at ≤1024, 1 column below 900), gap 16. Each cell top to bottom: eyebrow (`label`, `--ink-300`), last value (`figure-lg` `--ink-100`) with a secondary figure (`figure-sm`), then a `Sparkline` 48px tall, full cell width.
+
+| Cell | Eyebrow | Last value | Secondary | Sparkline extras |
+|---|---|---|---|---|
+| premium | `MARK VS ORACLE` | `fmtBp(premium.last)` | `premium` | zero line |
+| funding | `FUNDING APR` | `fmtApr(fundingApr.last)` | `HL hourly, annualized` | zero line; 3 predicted ticks `HL` / `BIN` / `BYB` at `fundingApr.predicted[].apr`, label = `short` field |
+| OI | `OPEN INTEREST` | `fmtCompactUsd(oiUsd.last)` | `fmtPercentSigned(oiUsd.change24h) 24h`, coloured `--positive` / `--negative` / `--flat` by sign, `—` if null | — |
+| volume | `VOLUME 24H` | `fmtCompactUsd(volume24h.last)` | `notional` | — |
+
+- Per cell, if its `points.length < 2` the sparkline area shows centred `figure-sm` `--ink-300` text `collecting` (premium/OI/volume) or `no funding data` (funding) at the same 48px height, so the layout never jumps. Funding normally renders even while snapshots are still collecting, because it comes from the funding history.
+- States: `data == null && !error` → loading block per 7; `error` → `failed to load — retry` (partial state, 7).
+
+### 6.9 `Sparkline` (Phase 3b, inline SVG, no library)
+
+File `components/Sparkline.tsx`, ~60 lines, pure presentational. Props: `points: [number, number][]` (`[t, v]`, ascending), `height = 48`, `zeroLine = false`, `markers: { label: string; value: number }[] = []`, `ariaLabel: string`.
+
+- `<svg viewBox="0 0 200 {height}" preserveAspectRatio="none" width="100%" height={height} role="img" aria-label={ariaLabel}>`. Strokes use `vector-effect="non-scaling-stroke"` so stretching keeps 1.5px lines.
+- x: linear in `t` over `[points[0].t, points.at(-1).t]` into `[0, 200 − 16]` (the right 16 units are reserved for marker ticks). y: linear over `[min, max]` of all values ∪ marker values ∪ `{0}` if `zeroLine`, padded 10% each side; if `max == min`, pad ±1 unit of |value| (or ±1 if value is 0) so a flat series draws mid-height.
+- Line: one `<path>`, `--ink-200`, 1.5px, no fill, no area. **Gaps:** start a new `M` segment when `t[i] − t[i−1] > 7_200_000` (2 × the 1h bucket), so missing collection never draws a fake straight line.
+- Last point: 2.5px-radius dot `--accent`.
+- `zeroLine`: 1px horizontal `--border-strong` dashed `2 2` at y(0).
+- Markers: a 6-unit horizontal `--ink-300` tick at the right edge at y(value); labels are HTML `<span>`s absolutely positioned over the SVG's right edge at `top = y/height × 100%`, `figure-sm` `--ink-300`, sorted by value and nudged apart to ≥12px. `title` on each label = `{label} predicted {fmtApr(value)}`.
+- No axes, no tooltip, no hover. The last value is printed by the parent.
+
+### 6.10 Assets tab restyle (Phase 3b)
+
+`AssetsView.tsx` changes only class names and inline colour references: its wrapper is a `.region` panel (3.6), the coin `<select>` and interval segmented use the control styles, the one-line stats row uses `figure` mono with `--ink-200` keys, and inline `var(--text-2)` becomes `var(--ink-200)`. Behaviour unchanged.
+
 ## 7. States
 
 Derived once in a `useDashboardData()` hook that polls `/api/health` and `/api/overview` every 60s and refetches `/api/htf`, `/api/ltf`, `/api/signals` when `health.lastRefresh` changes.
 
 | State | Trigger | Rendering |
 |---|---|---|
-| loading (first load) | no overview yet | StatusBar shows `loading…`; each region renders its header and a flat `--surface-2` block of its final height (no shimmer animation). Charts create the chart instance immediately so layout does not jump. |
-| ok | overview ok, `now − lastRefresh ≤ 30m` | normal, status pill `● live Nm ago` in `--ok` |
-| stale | `now − lastRefresh > 30m` | status pill `● stale Nh ago` in `--warn`; a 1px `--warn` top border on PhaseReadout; everything else renders the cached data unchanged. No modal, no banner. |
-| error (backend down) | `/api/overview` fetch fails or non-2xx | status pill `● offline — retrying in 30s` in `--bad`. If earlier data exists, keep rendering it with the pill in `--bad`. If nothing was ever loaded, each region shows centred `--text-3` text `backend unreachable at :8787 — run bun run dev`. Retry with fixed 30s interval; no exponential backoff needed locally. |
+| loading (first load) | no overview yet | StatusBar shows `loading…`; each region renders its header and a flat `--surface-200` block of its final height (no shimmer animation). Charts create the chart instance immediately so layout does not jump. |
+| ok | overview ok, `now − lastRefresh ≤ 30m` | normal, status pill `● live Nm ago` in `--positive` |
+| stale | `now − lastRefresh > 30m` | status pill `● stale Nh ago` in `--warning`; a 1px `--warning` top border on MarketRead; everything else renders the cached data unchanged. No modal, no banner. |
+| error (backend down) | `/api/overview` fetch fails or non-2xx | status pill `● offline — retrying in 30s` in `--negative`. If earlier data exists, keep rendering it with the pill in `--negative`. If nothing was ever loaded, each region shows centred `--ink-300` text `backend unreachable at :8787 — run bun run dev`. Retry with fixed 30s interval; no exponential backoff needed locally. |
 | partial | one of htf/ltf/signals fails while overview is ok | that region alone shows `failed to load — retry` with a text button; others unaffected. |
 | empty | endpoint ok but empty arrays | region-specific text from sections 6.3–6.6. |
 
@@ -340,29 +403,29 @@ No skeleton animations, no spinners longer than a 12px ring in the status pill.
 - HTF chart: independent crosshair; scroll/drag zoom native; double-click resets to `fitContent()`. Toggle 1d/1w keeps the visible range proportionally where possible, otherwise fits.
 - LTF chart: three panes time-synced natively; independent from HTF.
 - CycleVector: hover tooltip per point; no zoom.
-- SignalTable: click a row → HTF row scrolls the HTF chart to centre that `t` (`timeScale.scrollToPosition` after `timeToIndex`), LTF row does the same on the LTF chart. Cheap, high learning value: "what did the chart look like when the label flipped". Row gets `--surface-2` background while selected.
-- Toggles and filters are `<button role="tab">` groups with `aria-selected`; the active one carries `--accent` colour and a 1px `--accent` bottom border.
+- SignalTable: click a row → HTF row scrolls the HTF chart to centre that `t` (`timeScale.scrollToPosition` after `timeToIndex`), LTF row does the same on the LTF chart. Cheap, high learning value: "what did the chart look like when the label flipped". Row gets `--surface-200` background while selected.
+- Toggles and filters are `<button role="tab">` groups with `aria-selected`; styled as the segmented control in 3.6 (active = `--surface-300` + `--ink-100`). Focus-visible ring `--accent-strong`.
 - Keyboard: tab order follows visual order; drawer traps focus; charts are not keyboard-navigable (documented limitation).
 
 ## 9. Chart theme (lightweight-charts options, shared)
 
 ```
-layout.background     solid --surface-1
-layout.textColor      --text-3
+layout.background     solid --surface-100
+layout.textColor      --ink-300
 layout.fontFamily     --font-mono
 layout.fontSize       11
-grid.vertLines/horzLines.color   --line @ 60%
-crosshair.vertLine/horzLine.color  --line-strong, labelBackgroundColor --surface-2
-rightPriceScale.borderColor / timeScale.borderColor   --line
+grid.vertLines/horzLines.color   --border-subtle @ 60%
+crosshair.vertLine/horzLine.color  --border-strong, labelBackgroundColor --surface-200
+rightPriceScale.borderColor / timeScale.borderColor   --border-subtle
 timeScale.rightOffset 4, barSpacing default
 localization.priceFormatter / timeFormatter  from format.ts
 ```
 
-Read CSS variables at chart creation via `getComputedStyle(document.documentElement)`; charts do not re-theme live (single theme in v1).
+Read CSS variables at chart creation via `getComputedStyle(document.documentElement)`; charts do not re-theme live (single theme). Phase 3b changes only the variable names above (and candle colours via `--positive`/`--negative`, 3.2); every option, series, pane and interaction stays identical.
 
 ## 10. Accessibility floor
 
-- Text contrast: `--text-1` and `--text-2` on `--surface-1` both exceed 4.5:1; `--text-3` is for axis and disabled text only, never for body copy that must be read.
+- Text contrast on `--surface-100` / `--surface-200` / `--surface-300`: `--ink-100` 16.5 / 15.1 / 13.4, `--ink-200` 10.6 / 9.7 / 8.6, `--ink-300` 5.6 / 5.2 / 4.6, `--accent` 5.3 / 4.8 / 4.3 (:1). All pass 4.5:1 except `--accent` on `--surface-300`, so never put accent text on the active segmented button. `--ink-300` is fine for eyebrows and table headers; keep long body copy on `--ink-200` or brighter.
 - Colour is never sole encoding (3.3, 3.4, 3.2).
 - Tables are real `<table>` elements; charts have an `aria-label` naming the series and interval; the drawer is a dialog.
 - No motion beyond native chart panning.
@@ -376,7 +439,10 @@ format.ts                         section 5
 theme.css                         tokens (section 3, 4) + region/base styles
 useDashboardData.ts               section 7 state machine + polling
 components/StatusBar.tsx
-components/PhaseReadout.tsx
+components/MarketRead.tsx         (replaces PhaseReadout.tsx, 6.2)
+components/DerivativesPanel.tsx   (6.8)
+components/Sparkline.tsx          (6.9)
+components/AssetsView.tsx         (6.10)
 components/CycleVector.tsx
 components/HtfChart.tsx
 components/LtfChart.tsx

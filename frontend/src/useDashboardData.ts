@@ -6,7 +6,7 @@
 // and must not be re-fetched every 60s. Only /api/overview, /api/health (small)
 // and /api/signals are polled.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Derivatives, type Health, type HtfResponse, type LtfResponse, type Overview, type Signal } from "./api";
+import { api, type Derivatives, type Health, type HtfInterval, type HtfResponse, type LtfInterval, type LtfResponse, type Overview, type Signal } from "./api";
 
 export type Status = "loading" | "ok" | "stale" | "error";
 
@@ -14,7 +14,8 @@ const STALE_MS = 30 * 60 * 1000;
 const POLL_OK_MS = 60_000;
 const POLL_ERROR_MS = 30_000;
 
-export function useDashboardData(htfInterval: "1d" | "1w", ltfInterval: "4h" | "1h") {
+// ltfInterval null = main chart is on an HTF frame, so no LTF fetch is needed.
+export function useDashboardData(htfInterval: HtfInterval, ltfInterval: LtfInterval | null) {
   const [health, setHealth] = useState<Health | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [overviewFailed, setOverviewFailed] = useState(false);
@@ -91,6 +92,8 @@ export function useDashboardData(htfInterval: "1d" | "1w", ltfInterval: "4h" | "
   useEffect(() => {
     let cancelled = false;
     setLtfError(false);
+    setLtf(null);
+    if (ltfInterval == null) return;
     api
       .ltf(ltfInterval)
       .then((r) => !cancelled && setLtf(r))
@@ -134,6 +137,7 @@ export function useDashboardData(htfInterval: "1d" | "1w", ltfInterval: "4h" | "
       api.htf(htfInterval).then(setHtf).catch(() => setHtfError(true));
     },
     retryLtf: () => {
+      if (ltfInterval == null) return;
       setLtfError(false);
       api.ltf(ltfInterval).then(setLtf).catch(() => setLtfError(true));
     },

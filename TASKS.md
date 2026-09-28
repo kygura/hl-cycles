@@ -27,3 +27,6 @@ Tracker: local markdown (this file). Status: done / frontier / blocked.
 | T6 | API routes wiring model to store | Sonnet | T4, T5 | done |
 | T7 | frontend per DESIGN.md | Sonnet | T3, T6 | done |
 | T8 | verification gate (review lenses, finalizer, ponytail-review, standards/spec, design drift, tests/build) | mixed | T7 | done |
+
+## Backlog / open items
+- HTF thresholds are absolute (hDrawdown, capitulation gates); shallower cycles may never trigger capitulation. Candidate: rolling-percentile drawdown/roc365 like mayerPct. See docs/MODEL.md 6.1.

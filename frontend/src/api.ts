@@ -104,7 +104,7 @@ export type Overview = {
 export type Pt = [t: number, v: number];
 export type Derivatives = {
   now: number;
-  windowMs: 604800000;
+  windowMs: number;
   asOf: number | null;
   firstSnapshot: number | null;
   collecting: boolean;
@@ -114,7 +114,7 @@ export type Derivatives = {
     last: number | null;
     predicted: { venue: string; short: string; apr: number }[];
   };
-  oiUsd: { points: Pt[]; last: number | null; change24h: number | null };
+  oiUsd: { points: Pt[]; last: number | null; change24h: number | null; src: "binance" | "hl" };
   volume24h: { points: Pt[]; last: number | null };
 };
 
@@ -132,6 +132,11 @@ export type HtfResponse = { candles: HtfPoint[]; halvings: number[] };
 export type LtfResponse = { points: LtfPoint[] };
 
 export type LtfInterval = "15m" | "1h" | "4h";
+export type HtfInterval = "1d" | "1w";
+/** Every timeframe the main BTC chart can show; 15m/1h/4h render LtfChart, 1d/1w render HtfChart. */
+export type Frame = LtfInterval | HtfInterval;
+export const FRAMES: readonly Frame[] = ["15m", "1h", "4h", "1d", "1w"];
+export const isHtfInterval = (f: Frame): f is HtfInterval => f === "1d" || f === "1w";
 export type Asset = { coin: string; sector: string };
 export type AssetsResponse = { assets: Asset[] };
 
@@ -155,10 +160,10 @@ const STATIC = import.meta.env.VITE_STATIC === "1";
 export const api = {
   health: () => getJson<Health>(STATIC ? "./api/health.json" : "/api/health"),
   overview: () => getJson<Overview>(STATIC ? "./api/overview.json" : "/api/overview"),
-  htf: (interval: "1d" | "1w") =>
+  htf: (interval: HtfInterval) =>
     getJson<HtfResponse>(STATIC ? `./api/htf-${interval}.json` : `/api/htf?interval=${interval}`),
-  ltf: (interval: "4h" | "1h") =>
-    getJson<LtfResponse>(STATIC ? `./api/ltf-${interval}.json` : `/api/ltf?interval=${interval}`),
+  // BTC is also exported as ltf-BTC-<interval>.json (all three intervals), so static mode reuses it.
+  ltf: (interval: LtfInterval) => api.assetLtf("BTC", interval),
   signals: (frame: "HTF" | "LTF", limit = 200) =>
     getJson<SignalsResponse>(
       STATIC ? `./api/signals-${frame}.json` : `/api/signals?frame=${frame}&limit=${limit}`,

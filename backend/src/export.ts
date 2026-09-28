@@ -16,15 +16,13 @@ const ROUTES: Record<string, string> = {
   "overview.json": "/api/overview",
   "htf-1d.json": "/api/htf?interval=1d",
   "htf-1w.json": "/api/htf?interval=1w",
-  "ltf-4h.json": "/api/ltf?interval=4h",
-  "ltf-1h.json": "/api/ltf?interval=1h",
   "signals-HTF.json": "/api/signals?frame=HTF&limit=200",
   "signals-LTF.json": "/api/signals?frame=LTF&limit=200",
   "assets.json": "/api/assets",
   "derivatives.json": "/api/derivatives",
 };
 // One ltf-<COIN>-<interval>.json per asset (including BTC) x interval, for the Assets tab
-// (SPEC.md 3.5) — 36 files on top of the 10 entries above, 46 total (SPEC.md 3b).
+// (SPEC.md 3.5) and the main BTC chart's LTF frames — 36 files on top of the 8 entries above.
 for (const { coin } of ASSETS) {
   for (const interval of ASSET_LTF_INTERVALS) {
     ROUTES[`ltf-${coin}-${interval}.json`] = `/api/ltf?interval=${interval}&coin=${coin}`;

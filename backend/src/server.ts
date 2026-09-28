@@ -7,7 +7,7 @@ import { computeLtf, resampleCandles, type LtfInterval, type LtfPoint } from "./
 import { signals, overview } from "./model/composite";
 import { derivatives, predictedApr } from "./model/derivatives";
 import { ASSETS } from "./assets";
-import type { FundingRow, Snapshot } from "./types";
+import type { FundingRow, OiRow, Snapshot } from "./types";
 
 const ASSET_LTF_LIMIT = 1500;
 const ALT_4H_BUCKET_MS = 14_400_000;
@@ -25,6 +25,7 @@ type Cache = {
   lastSnapshotRow: Snapshot | null;
   snapshots: Snapshot[];
   funding: FundingRow[];
+  oiHistory: OiRow[];
   counts: { candles1d: number; candles4h: number; candles1h: number; funding: number; snapshots: number };
 };
 let cache: Cache | null = null;
@@ -61,6 +62,7 @@ async function getCache(): Promise<Cache> {
     lastSnapshotRow: snapshots.length ? snapshots[snapshots.length - 1]! : null,
     snapshots,
     funding,
+    oiHistory,
     counts: {
       candles1d: daily.length,
       candles4h: hl4h.length,
@@ -101,7 +103,8 @@ async function getAssetLtf(coin: string, interval: LtfInterval): Promise<LtfPoin
     points = computeLtf(candles, funding, [], interval, now, oiRows);
   }
 
-  const sliced = points.slice(-ASSET_LTF_LIMIT);
+  // BTC is the main chart and keeps full history; only alts are trimmed.
+  const sliced = coin === "BTC" ? points : points.slice(-ASSET_LTF_LIMIT);
   assetCache.points.set(cacheKey, sliced);
   return sliced;
 }
@@ -154,8 +157,8 @@ app.get("/api/htf", async (c) => {
 app.get("/api/assets", (c) => c.json({ assets: ASSETS }));
 
 app.get("/api/derivatives", async (c) => {
-  const { snapshots, funding } = await getCache();
-  return c.json(derivatives(snapshots, funding, Date.now()));
+  const { snapshots, funding, oiHistory } = await getCache();
+  return c.json(derivatives(snapshots, funding, Date.now(), oiHistory));
 });
 
 const ltfQuery = z.object({

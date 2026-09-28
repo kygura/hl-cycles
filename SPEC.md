@@ -235,7 +235,7 @@ Normal runs never hit the guard. The one-time bootstrap (about 8k weight: full 1
 - `GET /api/assets` returns `{ assets: ASSETS }`.
 - `GET /api/ltf?interval=15m|1h|4h&coin=<COIN>`:
   - With no `coin`: the response is byte-identical to today (BTC, full length). `interval=15m` without a coin is also accepted.
-  - With `coin`: it must be in `ASSETS` (otherwise 400 `{ error }`). The response is `{ points }` sliced to the last 1500 points. Include `coin=BTC`, which uses the BTC files, snapshots and `oi-history`.
+  - With `coin`: it must be in `ASSETS` (otherwise 400 `{ error }`). The response is `{ points }` sliced to the last 1500 points for alts; `coin=BTC` is never sliced (it is the main chart) and uses the BTC files, snapshots and `oi-history`.
   - Per-(coin, interval) results are memoized on the same `lastRefresh:lastSnapshot` key as the existing cache.
 - `export.ts`: `ROUTES` becomes the existing 8 entries plus `assets.json` plus `ltf-<COIN>-<interval>.json` for every asset × {15m, 1h, 4h}, which is 45 files. The alt export is about 1500 points × about 620 B, about 0.9 MB per file and about 33 MB in `dist/`. It gzips on the wire and is fetched one file at a time.
 - `frontend/src/api.ts`:
@@ -343,17 +343,17 @@ New pure module `backend/src/model/derivatives.ts`. It exports `derivatives(snap
 Exact response shape (the static file is identical):
 
 ```ts
-type Pt = [t: number, v: number];            // ascending by t, ≤ 169 per series
+type Pt = [t: number, v: number];            // ascending by t, hourly, ≤ 2161 per series (90d)
 type Derivatives = {
   now: number;                               // window end (ms)
-  windowMs: 604800000;
+  windowMs: number; // 7_776_000_000 (90d) since the derivatives panel redesign
   asOf: number | null;                       // t of the last snapshot in the window
   firstSnapshot: number | null;              // earliest snapshot t in the whole file
   collecting: boolean;                       // < 24 hourly snapshot buckets in the window
   premium:    { points: Pt[]; last: number | null };                    // markPx/oraclePx − 1
   fundingApr: { points: Pt[]; last: number | null;                      // funding.json rate × 8760
                 predicted: { venue: string; short: string; apr: number }[] }; // venue as stored ("HlPerp","BinPerp","BybitPerp"), short "HL"|"BIN"|"BYB"
-  oiUsd:      { points: Pt[]; last: number | null; change24h: number | null };
+  oiUsd:      { points: Pt[]; last: number | null; change24h: number | null; src: "binance" | "hl" }; // backfill (oi-history.json) wins over snapshots; never mixed
   volume24h:  { points: Pt[]; last: number | null };                    // dayNtlVlm
 };
 ```

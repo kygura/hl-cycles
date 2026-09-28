@@ -9,7 +9,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { HtfPhase, HtfPoint } from "../api";
+import { FRAMES, type Frame, type HtfPhase, type HtfPoint } from "../api";
 import { fmtDate, fmtPrice, fmtUnsigned2, fmtPercentSigned, fmtScore } from "../format";
 import { PHASE_TOKEN, PHASE_VAR } from "../tokens";
 
@@ -33,8 +33,8 @@ export function HtfChart({
 }: {
   data: HtfPoint[];
   halvings: number[];
-  interval: "1d" | "1w";
-  onIntervalChange: (i: "1d" | "1w") => void;
+  interval: Frame;
+  onIntervalChange: (i: Frame) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -173,9 +173,9 @@ export function HtfChart({
     <section className="region">
       <div className="region-header">
         <span>
-          BTC/USD daily · log
-          <span className="segmented" style={{ marginLeft: 8, display: "inline-flex" }}>
-            {(["1d", "1w"] as const).map((i) => (
+          BTC/USD {interval} · log
+          <span className="segmented" role="tablist" style={{ marginLeft: 8, display: "inline-flex" }}>
+            {FRAMES.map((i) => (
               <button key={i} role="tab" aria-selected={interval === i} onClick={() => onIntervalChange(i)}>
                 {i}
               </button>

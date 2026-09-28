@@ -584,48 +584,27 @@ button:focus-visible, select:focus-visible, [role="tab"]:focus-visible {
   color: var(--warning);
   background: var(--warning-subtle);
 }
-.deriv-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-}
-@media (max-width: 1024px) {
-  .deriv-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 900px) {
-  .deriv-grid { grid-template-columns: 1fr; }
-}
-.deriv-cell-eyebrow {
-  color: var(--ink-300);
-}
-.deriv-cell-last {
-  margin-top: 4px;
-  font-family: var(--font-mono);
-  font-size: 20px;
-  line-height: 26px;
-  font-weight: 500;
-  color: var(--ink-100);
-}
-.deriv-cell-secondary {
-  margin-left: 8px;
+.deriv-table {
+  width: 100%;
+  border-collapse: collapse;
   font-family: var(--font-mono);
   font-size: 12px;
+}
+.deriv-table th,
+.deriv-table td {
+  padding: 6px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.deriv-table th {
   color: var(--ink-300);
+  font-weight: 400;
 }
-.deriv-cell-sparkline {
-  margin-top: 8px;
-  height: 48px;
-  position: relative;
-}
-.deriv-cell-collecting {
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-300);
-  font-size: 12px;
-  font-family: var(--font-mono);
-}
+.deriv-table tbody tr:last-child td { border-bottom: 0; }
+.deriv-table .num { text-align: right; }
+.deriv-table .deriv-value { color: var(--ink-100); font-weight: 500; }
+.deriv-table .deriv-spark { width: 40%; min-width: 160px; padding-top: 2px; padding-bottom: 2px; }
 
 /* ---- Sparkline ---- */
 

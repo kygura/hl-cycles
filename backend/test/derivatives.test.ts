@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { derivatives, predictedApr } from "../src/model/derivatives";
-import type { FundingRow, Snapshot } from "../src/types";
+import type { FundingRow, OiRow, Snapshot } from "../src/types";
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -31,17 +31,17 @@ function fundingRow(t: number, rate = 0.0000125): FundingRow {
 
 describe("derivatives", () => {
   test("empty snapshots, 200 hourly funding rows", () => {
-    // t = NOW - i*HOUR for i = 0..199; window keeps t > NOW - 168h, i.e. i = 0..167 (168 rows).
+    // t = NOW - i*HOUR for i = 0..2199; window keeps t > NOW - 2160h, i.e. i = 0..2159 (2160 rows).
     const funding: FundingRow[] = [];
-    for (let i = 0; i < 200; i++) funding.push(fundingRow(NOW - i * HOUR, 0.00001 + i * 1e-8));
+    for (let i = 0; i < 2200; i++) funding.push(fundingRow(NOW - i * HOUR, 0.00001 + i * 1e-8));
     const d = derivatives([], funding, NOW);
     expect(d.collecting).toBe(true);
     expect(d.premium).toEqual({ points: [], last: null });
-    expect(d.oiUsd).toEqual({ points: [], last: null, change24h: null });
+    expect(d.oiUsd).toEqual({ points: [], last: null, change24h: null, src: "hl" });
     expect(d.volume24h).toEqual({ points: [], last: null });
     expect(d.fundingApr.predicted).toEqual([]);
     expect(d.firstSnapshot).toBeNull();
-    expect(d.fundingApr.points.length).toBe(168);
+    expect(d.fundingApr.points.length).toBe(2160);
     for (const [t, v] of d.fundingApr.points) {
       const row = funding.find((f) => f.t === t)!;
       expect(v).toBeCloseTo(row.rate * 8760, 10);
@@ -57,8 +57,8 @@ describe("derivatives", () => {
     expect(d.oiUsd.last).toBe(3);
   });
 
-  test("a snapshot older than 7d is excluded from points but sets firstSnapshot", () => {
-    const old = NOW - 8 * DAY;
+  test("a snapshot older than 90d is excluded from points but sets firstSnapshot", () => {
+    const old = NOW - 91 * DAY;
     const recent = NOW - HOUR;
     const d = derivatives([snap(old), snap(recent)], [], NOW);
     expect(d.firstSnapshot).toBe(old);
@@ -89,6 +89,27 @@ describe("derivatives", () => {
 
     const d3 = derivatives([snap(included, { oiCoins: 0 }), snap(nowT, { oiCoins: 100 })], [], nowT);
     expect(d3.oiUsd.change24h).toBeNull();
+  });
+
+  test("oiHistory replaces snapshot OI (single source) and change24h comes from it", () => {
+    const hist: OiRow[] = [];
+    for (let i = 48; i >= 2; i--) hist.push({ t: NOW - i * HOUR, oiCoins: 1, oiUsd: 100 + i, src: "binance" });
+    const d = derivatives([snap(NOW - HOUR, { oiUsd: 999 })], [], NOW, hist);
+    expect(d.oiUsd.src).toBe("binance");
+    expect(d.oiUsd.points.length).toBe(47);
+    expect(d.oiUsd.last).toBe(102);
+    // then = point at NOW-26h (value 126); newest = NOW-2h (value 102)
+    expect(d.oiUsd.change24h).toBeCloseTo(102 / 126 - 1, 10);
+    expect(derivatives([snap(NOW - HOUR)], [], NOW).oiUsd.src).toBe("hl");
+  });
+
+  test("stale oiHistory (last point 3d old) loses to fresh HL snapshots", () => {
+    const hist: OiRow[] = [];
+    for (let i = 10 * 24; i >= 3 * 24; i--) hist.push({ t: NOW - i * HOUR, oiCoins: 1, oiUsd: 100 + i, src: "binance" });
+    const d = derivatives([snap(NOW - 2 * HOUR, { oiUsd: 500 }), snap(NOW - HOUR, { oiUsd: 600 })], [], NOW, hist);
+    expect(d.oiUsd.src).toBe("hl");
+    expect(d.oiUsd.points.map(([, v]) => v)).toEqual([500, 600]);
+    expect(d.oiUsd.last).toBe(600);
   });
 
   test("predictedApr formula", () => {

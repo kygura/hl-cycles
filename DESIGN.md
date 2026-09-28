@@ -30,7 +30,7 @@ Reading order (what the eye hits first to last): phase readout → cycle vector 
 │  cycle  d+890 · 61% · next 2028-04     │     └────┴────┘               │
 │  ▸ features                             │        trend →                │
 ├────────────────────────────────────────┴───────────────────────────────┤
-│ DerivativesPanel  Hyperliquid derivatives · BTC-PERP   [24h][7d]       │
+│ DerivativesPanel  Hyperliquid derivatives · BTC-PERP   [7d][30d][90d]   │
 │  PREMIUM         FUNDING APR       OPEN INTEREST      VOLUME 24H        │  ~120px
 │  −3.1 bp         +9.9%   ▸HL ▸BIN  3.06B  −1.2% 24h   2.00B             │
 │  ╱╲_╱‾╲_         ‾‾╲__╱‾ ▸BYB      ╱‾‾╲__╱            _╱‾╲_╱            │
@@ -354,7 +354,7 @@ Content, in this order:
 
 File `components/DerivativesPanel.tsx`. Props: `data: Derivatives | null`, `error: boolean`, `onRetry()`. Data is `/api/derivatives` (`derivatives.json` static), contract in SPEC.md 3b.3. Span 12, placed right after the MarketRead/CycleVector row.
 
-- Header: `Hyperliquid derivatives · BTC-PERP`; right side a `[24h][7d]` segmented control (default `7d`; `24h` is a client-side slice `t ≥ lastT − 86_400_000` of the same points, no refetch) and, when `data.collecting`, a pill `collecting since {fmtDate(data.firstSnapshot)}` (`--warning` on `--warning-subtle`, or `collecting — no snapshot yet` if `firstSnapshot` is null).
+- Header: `Hyperliquid derivatives · BTC-PERP`; right side a `[7d][30d][90d]` segmented control (default `30d`; each is a client-side slice of the 90d payload, no refetch) and, when `data.collecting`, a pill `collecting since {fmtDate(data.firstSnapshot)}` (`--warning` on `--warning-subtle`, or `collecting — no snapshot yet` if `firstSnapshot` is null).
 - Body: CSS grid of 4 cells (2×2 at ≤1024, 1 column below 900), gap 16. Each cell top to bottom: eyebrow (`label`, `--ink-300`), last value (`figure-lg` `--ink-100`) with a secondary figure (`figure-sm`), then a `Sparkline` 48px tall, full cell width.
 
 | Cell | Eyebrow | Last value | Secondary | Sparkline extras |

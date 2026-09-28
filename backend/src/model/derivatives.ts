@@ -1,15 +1,19 @@
 // Hyperliquid derivatives series for the DerivativesPanel — display only, no new model math.
 // See docs/MODEL.md section 3.4 and SPEC.md 3b.3. Pure functions, stored data only.
-import type { FundingRow, Snapshot } from "../types";
+import type { FundingRow, OiRow, Snapshot } from "../types";
 
-const WINDOW_MS = 604_800_000; // 7 days
+// 90 days hourly: the panel offers 7d/30d/90d client-side slices of one payload. Funding and OI
+// come from the multi-year backfill (funding.json, oi-history.json); premium and volume only
+// exist in snapshots, so those series stay sparse until snapshots cover the window.
+const WINDOW_MS = 7_776_000_000; // 90 days
+const OI_BACKFILL_MAX_AGE_MS = 6 * 3_600_000; // older backfill loses to fresher HL snapshots
 const HOUR_MS = 3_600_000;
 
 export type Pt = [t: number, v: number];
 
 export type Derivatives = {
   now: number;
-  windowMs: 604800000;
+  windowMs: number;
   asOf: number | null;
   firstSnapshot: number | null;
   collecting: boolean;
@@ -19,7 +23,8 @@ export type Derivatives = {
     last: number | null;
     predicted: { venue: string; short: string; apr: number }[];
   };
-  oiUsd: { points: Pt[]; last: number | null; change24h: number | null };
+  /** src: "binance" = hourly Binance-proxy backfill (oi-history.json), "hl" = Hyperliquid snapshots. */
+  oiUsd: { points: Pt[]; last: number | null; change24h: number | null; src: "binance" | "hl" };
   volume24h: { points: Pt[]; last: number | null };
 };
 
@@ -50,7 +55,7 @@ function seriesFromBucketed(bucketed: Snapshot[], pick: (s: Snapshot) => number 
   return out;
 }
 
-export function derivatives(snapshots: Snapshot[], funding: FundingRow[], now: number): Derivatives {
+export function derivatives(snapshots: Snapshot[], funding: FundingRow[], now: number, oiHistory: OiRow[] = []): Derivatives {
   const windowStart = now - WINDOW_MS;
 
   const firstSnapshot = snapshots.length ? Math.min(...snapshots.map((s) => s.t)) : null;
@@ -76,7 +81,21 @@ export function derivatives(snapshots: Snapshot[], funding: FundingRow[], now: n
   }
 
   const premiumPts = seriesFromBucketed(bucketed, (s) => (s.oraclePx > 0 ? s.markPx / s.oraclePx - 1 : null));
-  const oiPts = seriesFromBucketed(bucketed, (s) => s.oiUsd);
+  // One source per series: Binance-proxy OI (backfill) and Hyperliquid OI (snapshots) differ by
+  // 2-3x, so mixing them draws a fake cliff. Backfill wins when present and fresh (last point
+  // within 6h of now); change24h then comes from the same series (1h tolerance) instead of the
+  // snapshot coins. A stale backfill falls back to snapshots so a dead feed cannot win forever.
+  let oiHist: Pt[] = oiHistory
+    .filter((r) => r.t > windowStart && r.t <= now && Number.isFinite(r.oiUsd))
+    .map((r) => [r.t, r.oiUsd] as Pt)
+    .sort((a, b) => a[0] - b[0]);
+  if (oiHist.length && now - oiHist[oiHist.length - 1]![0] > OI_BACKFILL_MAX_AGE_MS) oiHist = [];
+  const oiPts = oiHist.length ? oiHist : seriesFromBucketed(bucketed, (s) => s.oiUsd);
+  if (oiHist.length) {
+    const [tNow, vNow] = oiHist[oiHist.length - 1]!;
+    const then = oiHist.filter(([t]) => t >= tNow - 86_400_000 - HOUR_MS && t <= tNow - 86_400_000).pop();
+    change24h = then && then[1] > 0 ? vNow / then[1] - 1 : null;
+  }
   const volumePts = seriesFromBucketed(bucketed, (s) => s.dayNtlVlm);
 
   const fundingPts: Pt[] = funding
@@ -94,7 +113,7 @@ export function derivatives(snapshots: Snapshot[], funding: FundingRow[], now: n
     collecting: bucketed.length < 24,
     premium: { points: premiumPts, last: last(premiumPts) },
     fundingApr: { points: fundingPts, last: last(fundingPts), predicted: orderedPredicted(nowSnap) },
-    oiUsd: { points: oiPts, last: last(oiPts), change24h },
+    oiUsd: { points: oiPts, last: last(oiPts), change24h, src: oiHist.length ? "binance" : "hl" },
     volume24h: { points: volumePts, last: last(volumePts) },
   };
 }

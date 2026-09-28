@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { LtfInterval } from "./api";
+import { FRAMES, isHtfInterval, type Frame } from "./api";
 import { useDashboardData } from "./useDashboardData";
 import { StatusBar } from "./components/StatusBar";
 import { MarketRead } from "./components/MarketRead";
@@ -11,20 +11,16 @@ import { SignalTable } from "./components/SignalTable";
 import { PhaseGuide } from "./components/PhaseGuide";
 import { AssetsView } from "./components/AssetsView";
 
-const BTC_LTF_INTERVALS: readonly Extract<LtfInterval, "4h" | "1h">[] = ["4h", "1h"];
-
 function App() {
   const [view, setView] = useState<"btc" | "assets">("btc");
-  const [htfInterval, setHtfInterval] = useState<"1d" | "1w">("1d");
-  const [ltfInterval, setLtfInterval] = useState<Extract<LtfInterval, "4h" | "1h">>("4h");
+  // One timeframe for the main BTC chart. 1d/1w render HtfChart (SMA200, phase bands, halvings);
+  // 15m/1h/4h render LtfChart (ema50, state strip, funding, OI). Daily HTF stays loaded on LTF
+  // frames because CycleVector reads it.
+  const [frame, setFrame] = useState<Frame>("1d");
+  const htfInterval = frame === "1w" ? "1w" : "1d";
+  const ltfInterval = isHtfInterval(frame) ? null : frame;
   const [signalFilter, setSignalFilter] = useState<"ALL" | "HTF" | "LTF">("ALL");
   const [guideOpen, setGuideOpen] = useState(false);
-
-  // LtfChart is generic over all 3 LtfInterval values (AssetsView also uses 15m), but the BTC
-  // view only offers 4h/1h -- narrow here instead of casting at the call site.
-  const handleLtfIntervalChange = (i: LtfInterval) => {
-    if (i === "4h" || i === "1h") setLtfInterval(i);
-  };
 
   const {
     health,
@@ -110,58 +106,47 @@ function App() {
           </div>
 
           <div className="span-12">
-            {htfError ? (
+            {(ltfInterval ? ltfError : htfError) ? (
               <section className="region">
                 <div className="region-header">
-                  <span>HTF chart</span>
+                  <span>BTC chart · {frame}</span>
                 </div>
                 <div className="region-error">
                   failed to load
-                  <button onClick={retryHtf}>retry</button>
+                  <button onClick={ltfInterval ? retryLtf : retryHtf}>retry</button>
                 </div>
               </section>
+            ) : ltfInterval ? (
+              ltf ? (
+                <LtfChart
+                  data={ltf.points}
+                  interval={frame}
+                  onIntervalChange={setFrame}
+                  intervals={FRAMES}
+                  firstSnapshotAt={health?.firstSnapshot ?? null}
+                />
+              ) : (
+                <section className="region">
+                  <div className="region-header">
+                    <span>BTC chart · {frame}</span>
+                  </div>
+                  <div className="region-loading" style={{ height: 520 }} />
+                </section>
+              )
             ) : htf ? (
-              <HtfChart data={htf.candles} halvings={htf.halvings} interval={htfInterval} onIntervalChange={setHtfInterval} />
+              <HtfChart data={htf.candles} halvings={htf.halvings} interval={frame} onIntervalChange={setFrame} />
             ) : (
               <section className="region">
                 <div className="region-header">
-                  <span>HTF chart</span>
+                  <span>BTC chart · {frame}</span>
                 </div>
                 <div className="region-loading" style={{ height: 480 }} />
               </section>
             )}
           </div>
 
-          <div className="span-12">
-            {ltfError ? (
-              <section className="region">
-                <div className="region-header">
-                  <span>LTF chart</span>
-                </div>
-                <div className="region-error">
-                  failed to load
-                  <button onClick={retryLtf}>retry</button>
-                </div>
-              </section>
-            ) : ltf ? (
-              <LtfChart
-                data={ltf.points}
-                interval={ltfInterval}
-                onIntervalChange={handleLtfIntervalChange}
-                intervals={BTC_LTF_INTERVALS}
-                firstSnapshotAt={health?.firstSnapshot ?? null}
-              />
-            ) : (
-              <section className="region">
-                <div className="region-header">
-                  <span>LTF chart</span>
-                </div>
-                <div className="region-loading" style={{ height: 520 }} />
-              </section>
-            )}
-          </div>
-
-          <div className="span-12">
+          <details className="span-12">
+            <summary className="mono" style={{ cursor: "pointer", color: "var(--ink-200)", marginBottom: 8 }}>Signal history</summary>
             {signalsError ? (
               <section className="region">
                 <div className="region-header">
@@ -175,7 +160,7 @@ function App() {
             ) : (
               <SignalTable signals={signals ?? []} filter={signalFilter} onFilterChange={setSignalFilter} />
             )}
-          </div>
+          </details>
         </div>
         )}
       </div>

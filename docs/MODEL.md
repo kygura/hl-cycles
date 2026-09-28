@@ -455,6 +455,14 @@ Robustness: moving `dwell` between 14 and 16, the euphoria heat threshold betwee
 
 Funding facts behind the LTF constants: hourly funding sat exactly at the 0.1095 APR baseline in more than half of the hours (APR quantiles p5/p25/p50/p95/p99: -0.096 / 0.022 / 0.110 / 0.110 / 0.166). Premium quantiles p5/p50/p95: -5.9 / -4.0 / +3.0 bps.
 
+## 6.1 Threshold calibration (known limitation)
+
+The HTF heat and capitulation thresholds are absolute, not cycle-relative. `hDrawdown = clamp(1 + drawdown / 0.4)` (backend/src/model/htf.ts) saturates at a 40% drawdown, and capitulation requires either `H <= -0.6` within 30 days of the 365-day low, or `drawdown <= -0.5` with `roc30 <= -0.3`. Only `mayer` and `rv30` are percentile-ranked (`mayerPct`, `rv30Pct`).
+
+Cycles are getting structurally shallower: the 2026 maximum drawdown is about -53%, against -77% and -84% in the two prior cycles. A cycle that never reaches those depths may never trigger capitulation, and the heat floor never approaches -1.
+
+Candidate fix: rank `drawdown` and `roc365` by rolling percentile over a 4-year window, the way `mayerPct` is built, or scale the absolute thresholds per cycle. Not implemented. Revisit once the current cycle has printed its low and there is enough data to check the landmark table again.
+
 ## 7. Rationale (changes from the first draft)
 
 - **Mayer percentile window, trailing 1460 days rather than expanding.** An expanding window keeps comparing with the 2011–2013 extremes (Mayer 5+). Later tops (2021 at about 2.4) then never read hot, and heat drifts cooler every cycle. A trailing 4-year window adapts to diminishing returns and lets each cycle's top rank near 1. For a percentile, log or raw Mayer gives the same result because the log is monotonic, so the log appears only in the trend term (`tMayer`), where scale matters.

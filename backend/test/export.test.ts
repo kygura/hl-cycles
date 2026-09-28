@@ -10,8 +10,6 @@ const EXPECTED_FILES = [
   "health.json",
   "htf-1d.json",
   "htf-1w.json",
-  "ltf-1h.json",
-  "ltf-4h.json",
   "overview.json",
   "signals-HTF.json",
   "signals-LTF.json",
@@ -36,7 +34,7 @@ async function writeMinimalFixture(dataDir: string): Promise<void> {
 // module registry across all test files, and api.test.ts already loads "../src/server" against
 // its own fixture DATA_DIR — a second in-process import would just return that cached module.
 describe("bun run export", () => {
-  test("writes all 46 static routes as 200s to the given out dir", async () => {
+  test("writes all 44 static routes as 200s to the given out dir", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "hl-cycles-export-data-"));
     const outDir = await mkdtemp(join(tmpdir(), "hl-cycles-export-out-"));
     await writeMinimalFixture(dataDir);

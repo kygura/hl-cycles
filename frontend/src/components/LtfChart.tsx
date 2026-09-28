@@ -8,7 +8,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { LtfInterval, LtfPoint } from "../api";
+import type { Frame, LtfInterval, LtfPoint } from "../api";
 import { fmtDate, fmtTimestamp, fmtPrice, fmtApr, fmtBp, fmtCompactUsd, fmtScore, fmtPercentSigned } from "../format";
 import { STATE_VAR } from "../tokens";
 
@@ -24,21 +24,21 @@ const PRICE_H = 300;
 const FUNDING_H = 110;
 const OI_H = 110;
 
-export function LtfChart({
+export function LtfChart<I extends Frame = LtfInterval>({
   data,
   interval,
   onIntervalChange,
   firstSnapshotAt,
   coin = "BTC",
-  intervals = ["4h", "1h"],
+  intervals,
   note,
 }: {
   data: LtfPoint[];
-  interval: LtfInterval;
-  onIntervalChange: (i: LtfInterval) => void;
+  interval: I;
+  onIntervalChange: (i: I) => void;
   firstSnapshotAt: number | null;
   coin?: string;
-  intervals?: readonly LtfInterval[];
+  intervals: readonly I[];
   note?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);

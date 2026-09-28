@@ -200,14 +200,16 @@ describe("GET /api/ltf", () => {
   // unchanged) — `expected` is computed with the same computeLtf() under test, so a bug shared by
   // both sides would not be caught here. The golden check right below pins 3 fixed fixture points
   // against hardcoded values so a model regression (not just a routing one) fails this file too.
-  test("?interval=4h without coin equals direct computeLtf() over the same fixture data (unchanged BTC view)", async () => {
+  test("?interval=4h with and without coin=BTC equals direct computeLtf() over the same fixture data (full history, no slicing)", async () => {
     const { computeLtf } = await import("../src/model/ltf");
     const hl4h = JSON.parse(await readFile(join(dir, "candles-hl-4h.json"), "utf8"));
     const funding = JSON.parse(await readFile(join(dir, "funding.json"), "utf8"));
-    const res = await app.request("/api/ltf?interval=4h");
-    const body = await res.json();
     const expected = computeLtf(hl4h, funding, [], "4h", Date.now(), []);
-    expect(body.points).toEqual(expected);
+    const plain = await (await app.request("/api/ltf?interval=4h")).json();
+    expect(plain.points).toEqual(expected);
+    // The main chart fetches coin=BTC (frontend api.ts), which must not be trimmed like alts.
+    const btc = await (await app.request("/api/ltf?interval=4h&coin=BTC")).json();
+    expect(btc.points).toEqual(expected);
   });
 
   // Golden check: 3 fixed points (first/mid/last of the 80-bar fixture) pinned to hardcoded
@@ -261,12 +263,12 @@ describe("GET /api/derivatives", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveProperty("now");
-    expect(body.windowMs).toBe(604_800_000);
+    expect(body.windowMs).toBe(7_776_000_000);
     expect(body).toHaveProperty("asOf");
     expect(body).toHaveProperty("firstSnapshot");
     expect(body.collecting).toBe(true); // this fixture's DATA_DIR has no snapshots.jsonl
     expect(body.premium).toEqual({ points: [], last: null });
-    expect(body.oiUsd).toEqual({ points: [], last: null, change24h: null });
+    expect(body.oiUsd).toEqual({ points: [], last: null, change24h: null, src: "hl" });
     expect(body.volume24h).toEqual({ points: [], last: null });
     expect(body.fundingApr).toHaveProperty("points");
     expect(body.fundingApr).toHaveProperty("last");

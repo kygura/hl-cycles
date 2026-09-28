@@ -20,13 +20,15 @@ Backend runs on `127.0.0.1:8787`, frontend on `http://localhost:5173`.
 
 **Refresh cycle**: every 15 minutes, incremental candle fetch + OI/funding snapshot (no replays, only new data).
 
-Data stored in `data/` as JSON (git-ignored). Use `NO_SCHEDULER=1` to serve cached data only (e.g., for testing or offline replay).
+Data stored in `data/` as JSON, committed to the repo (this is how the deployed static dashboard gets its history — see Deploy below). Use `NO_SCHEDULER=1` to serve cached data only (e.g., for testing or offline replay).
 
 ## Commands
 
-- `bun run dev` — start backend + frontend  
-- `bun test` — run backend test suite  
+- `bun run dev` — start backend + frontend
+- `bun test` — run backend test suite
 - `bun run build` — build frontend to `frontend/dist/`
+- `bun run cron` — one-shot headless collection (refresh + snapshot + static export); add `-- --backfill` to also run the incremental daily backfill
+- `bun run export` — re-render `frontend/dist/api/*.json` from current data, without collecting anything new
 
 ## Data sources
 
@@ -34,6 +36,24 @@ Data stored in `data/` as JSON (git-ignored). Use `NO_SCHEDULER=1` to serve cach
   Candles, funding rates, open interest; no rate limits enforced (fire at will, mutable universe)
 - **Bitstamp** (supplementary, keyless public API)  
   Daily OHLC from 2011 to 2022; removed once Hyperliquid history matures (optional adapter at `backend/src/sources/bitstamp.ts`)
+
+## Deploy
+
+The dashboard runs as a free static site on GitHub Pages, kept current by a GitHub Actions workflow (`.github/workflows/collect.yml`) that collects data every 15 minutes and re-renders the static API. No server to host, no secrets.
+
+1. Create a **public** GitHub repo. Public matters here: Actions minutes and Pages are free and unlimited on public repos; the private free tier is ~2000 min/mo, and this schedule burns roughly that much on its own.
+2. `git remote add origin <your-repo-url>`
+3. `git push -u origin main` (this repo's current branch)
+4. In the repo's Settings → Pages, set **Source** to "GitHub Actions".
+5. In Settings → Actions → General → Workflow permissions, select "Read and write permissions" (the workflow commits collected data back to the repo).
+6. Go to the Actions tab and run the "collect" workflow once manually (`workflow_dispatch`) to populate `frontend/dist/api/` and trigger the first deploy.
+7. The site is live at `https://<your-username>.github.io/hl-cycles/`.
+
+Notes:
+- Cron schedule drift of 5-30 minutes at busy times is normal for GitHub Actions; don't expect exact 15-minute cadence.
+- GitHub auto-disables scheduled workflows on public repos after 60 days with no repo activity. The bot's own data commits likely count as activity, but this isn't documented by GitHub — if the schedule stops firing, re-enable it with one click from the Actions tab.
+- Every run commits `data/snapshots.jsonl`; the daily run (and manual dispatch) also commits the full `data/` directory and runs the incremental backfill.
+- Locally, `bun run cron` runs a single collection pass (useful for testing without waiting for the schedule). `bun run dev` is unaffected by any of this.
 
 ## Documentation
 

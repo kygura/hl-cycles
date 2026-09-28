@@ -1,0 +1,37 @@
+name: ci
+
+# Runs on every human push/PR. The collect workflow's own data commits are made with the bot
+# GITHUB_TOKEN, which doesn't trigger further workflow runs, so this stays a separate, narrowly
+# scoped check rather than piggybacking on collect.yml.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        run: bun run test
+
+      - name: Typecheck backend
+        run: cd backend && bun x tsc --noEmit
+
+      - name: Typecheck frontend
+        run: cd frontend && bun x tsc --noEmit
+
+      - name: Build (static API mode)
+        env:
+          VITE_STATIC: "1"
+        run: bun run build

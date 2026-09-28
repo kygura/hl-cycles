@@ -45,15 +45,15 @@ The dashboard runs as a free static site on GitHub Pages, kept current by a GitH
 2. `git remote add origin <your-repo-url>`
 3. `git push -u origin main` (this repo's current branch)
 4. In the repo's Settings → Pages, set **Source** to "GitHub Actions".
-5. In Settings → Actions → General → Workflow permissions, select "Read and write permissions" (the workflow commits collected data back to the repo).
-6. Go to the Actions tab and run the "collect" workflow once manually (`workflow_dispatch`) to populate `frontend/dist/api/` and trigger the first deploy.
-7. The site is live at `https://<your-username>.github.io/hl-cycles/`.
+5. Go to the Actions tab and run the "collect" workflow once manually (`workflow_dispatch`) to populate `frontend/dist/api/` and trigger the first deploy. (No need to touch Settings → Actions → Workflow permissions — the workflow already declares the `contents: write` / `pages: write` / `id-token: write` it needs per-job.)
+6. The site is live at `https://<your-username>.github.io/hl-cycles/`.
 
 Notes:
 - Cron schedule drift of 5-30 minutes at busy times is normal for GitHub Actions; don't expect exact 15-minute cadence.
 - GitHub auto-disables scheduled workflows on public repos after 60 days with no repo activity. The bot's own data commits likely count as activity, but this isn't documented by GitHub — if the schedule stops firing, re-enable it with one click from the Actions tab.
 - Every run commits `data/snapshots.jsonl`; the daily run (and manual dispatch) also commits the full `data/` directory and runs the incremental backfill.
 - Locally, `bun run cron` runs a single collection pass (useful for testing without waiting for the schedule). `bun run dev` is unaffected by any of this.
+- **No staleness alerting.** Nothing pages you if the schedule silently stops firing (rate limits, the 60-day auto-disable above, a broken run). Check `https://<your-username>.github.io/hl-cycles/api/health.json` for `lastRefresh`/`lastSnapshot` manually if the dashboard looks stale.
 
 ## Documentation
 

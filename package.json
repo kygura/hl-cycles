@@ -10,6 +10,8 @@
     "dev": "bun run --filter '*' dev",
     "test": "cd backend && bun test",
     "backfill": "cd backend && bun run backfill",
-    "build": "cd frontend && bun run build"
+    "build": "cd frontend && bun run build",
+    "cron": "cd backend && bun run cron",
+    "export": "cd backend && bun run export"
   }
 }

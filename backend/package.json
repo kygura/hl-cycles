@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "bun --watch src/server.ts",
-    "backfill": "bun src/backfill.ts"
+    "backfill": "bun src/backfill.ts",
+    "cron": "bun src/cron.ts",
+    "export": "bun src/export.ts"
   },
   "dependencies": {
     "hono": "^4.13.9",

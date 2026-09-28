@@ -115,10 +115,20 @@ async function getJson<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// GitHub Pages serves no backend: the build pre-renders every route to frontend/dist/api/*.json
+// (see backend/src/export.ts) and this flag swaps live fetches for those static files. Static
+// files are pre-rendered with a fixed limit=200, so `limit` is ignored in that mode.
+const STATIC = import.meta.env.VITE_STATIC === "1";
+
 export const api = {
-  health: () => getJson<Health>("/api/health"),
-  overview: () => getJson<Overview>("/api/overview"),
-  htf: (interval: "1d" | "1w") => getJson<HtfResponse>(`/api/htf?interval=${interval}`),
-  ltf: (interval: "4h" | "1h") => getJson<LtfResponse>(`/api/ltf?interval=${interval}`),
-  signals: (frame: "HTF" | "LTF", limit = 200) => getJson<SignalsResponse>(`/api/signals?frame=${frame}&limit=${limit}`),
+  health: () => getJson<Health>(STATIC ? "./api/health.json" : "/api/health"),
+  overview: () => getJson<Overview>(STATIC ? "./api/overview.json" : "/api/overview"),
+  htf: (interval: "1d" | "1w") =>
+    getJson<HtfResponse>(STATIC ? `./api/htf-${interval}.json` : `/api/htf?interval=${interval}`),
+  ltf: (interval: "4h" | "1h") =>
+    getJson<LtfResponse>(STATIC ? `./api/ltf-${interval}.json` : `/api/ltf?interval=${interval}`),
+  signals: (frame: "HTF" | "LTF", limit = 200) =>
+    getJson<SignalsResponse>(
+      STATIC ? `./api/signals-${frame}.json` : `/api/signals?frame=${frame}&limit=${limit}`,
+    ),
 };

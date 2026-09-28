@@ -13,7 +13,7 @@ import {
   commitWithHysteresis,
 } from "../src/model/indicators";
 import { computeHtf, resampleWeekly, cycleInfo, HALVINGS, NEXT_HALVING_ESTIMATE } from "../src/model/htf";
-import { computeLtf } from "../src/model/ltf";
+import { computeLtf, resampleCandles } from "../src/model/ltf";
 import { computeBias, biasLabel, summaryText, signals, overview } from "../src/model/composite";
 import type { Candle, FundingRow, Snapshot } from "../src/types";
 
@@ -426,6 +426,89 @@ describe("computeLtf synthetic series", () => {
     const points = computeLtf(candles, [], snapshots, "4h", now, oiHistory);
     expect(points[6].oiUsd).toBe(100_000); // "now" itself is still populated
     expect(points[6].oiChange24h).toBeNull(); // but the 24h comparison is cross-source -> null
+  });
+});
+
+describe("resampleCandles", () => {
+  const HOUR = 3_600_000;
+
+  test("1h -> 4h: correct O/H/L/C/V per bucket, leading partial bucket dropped", () => {
+    // hours 2,3 fall in the [0,4h) bucket (only 2 of 4 rows -> partial, dropped since it's the
+    // leading bucket). Hours 4..7 fill the [4h,8h) bucket completely (4 of 4 rows -> kept).
+    const rows = [2, 3, 4, 5, 6, 7].map((h) => ({
+      t: h * HOUR,
+      o: h,
+      h: h + 0.5,
+      l: h - 0.5,
+      c: h + 0.2,
+      v: 1,
+      src: "hl" as const,
+    }));
+    const out = resampleCandles(rows, 4 * HOUR);
+    expect(out.length).toBe(1);
+    expect(out[0]!.t).toBe(4 * HOUR);
+    expect(out[0]!.o).toBe(4); // open = first row in bucket
+    expect(out[0]!.c).toBeCloseTo(7.2, 6); // close = last row in bucket
+    expect(out[0]!.h).toBe(7.5); // max high across the bucket
+    expect(out[0]!.l).toBe(3.5); // min low across the bucket
+    expect(out[0]!.v).toBe(4); // summed volume
+  });
+
+  test("a fully-populated leading bucket is kept", () => {
+    const rows = [0, 1, 2, 3].map((h) => ({ t: h * HOUR, o: h, h, l: h, c: h, v: 1, src: "hl" as const }));
+    const out = resampleCandles(rows, 4 * HOUR);
+    expect(out.length).toBe(1);
+    expect(out[0]!.t).toBe(0);
+  });
+});
+
+describe("computeLtf 15m", () => {
+  test("2000 synthetic bars, HOURLY funding: premiumZ is null before bar 1440 (W30/2 for 15m), non-null after, and some bars escape insufficient_data", () => {
+    const BAR = 900_000;
+    const HOUR = 3_600_000;
+    const n = 2000;
+    const now = (n + 10) * BAR;
+    const closes = Array.from({ length: n }, (_, i) => 100 + Math.sin(i / 50) * 5);
+    const candles = ltfCandles(closes, BAR);
+    // Hyperliquid funding rows are hourly, not per-bar: one row per 4 15m bars.
+    const hours = Math.ceil((n * BAR) / HOUR) + 1;
+    const funding: FundingRow[] = Array.from({ length: hours }, (_, i) => ({
+      t: i * HOUR,
+      rate: 0.0000125,
+      premium: Math.sin(i / 8) * 0.0005,
+    }));
+    expect(() => computeLtf(candles, funding, [], "15m", now)).not.toThrow();
+    const points = computeLtf(candles, funding, [], "15m", now);
+    expect(points[1439]!.premiumZ).toBeNull();
+    expect(points[1440]!.premiumZ).not.toBeNull();
+    // most bars should now have forward-filled funding (bounded to 1h staleness)
+    const withFunding = points.filter((p) => p.fundingApr != null).length;
+    expect(withFunding).toBeGreaterThan(points.length * 0.9);
+    const nonInsufficient = points.filter((p) => p.state !== "insufficient_data").length;
+    expect(nonInsufficient).toBeGreaterThan(0);
+  });
+});
+
+describe("computeLtf oiAt window (1h, was 30m — SPEC.md 3.4)", () => {
+  test("a BTC snapshot 45 minutes before a bar close now yields oiUsd", () => {
+    const BAR = 14_400_000; // 4h
+    const candles = ltfCandles([100, 100], BAR);
+    const snapshots: Snapshot[] = [
+      {
+        t: BAR - 45 * 60_000, // 45 min before bar 0's close: inside the new 1h window, outside the old 30m one
+        markPx: 100,
+        oraclePx: 100,
+        oiCoins: 500,
+        oiUsd: 50_000,
+        funding: 0,
+        premium: 0,
+        dayNtlVlm: 0,
+        predicted: [],
+      },
+    ];
+    const now = 100_000 * BAR;
+    const points = computeLtf(candles, [], snapshots, "4h", now);
+    expect(points[0]!.oiUsd).toBe(50_000);
   });
 });
 

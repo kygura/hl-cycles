@@ -15,6 +15,48 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// --- weight guard (SPEC.md 3.3) ---
+// HL allows 1200 weight/min/IP; `info` calls weigh 20 plus a per-row surcharge. A module-level
+// rolling 60s log of {t, weight} lets postInfo throttle itself well under budget, without any
+// caller having to think about it. weightWaitMs is a pure function so it's directly testable.
+export type WeightLogEntry = { t: number; weight: number };
+
+const WEIGHT_WINDOW_MS = 60_000;
+const WEIGHT_BUDGET = 1000;
+
+/** ms to wait so that, after waiting, the trailing-60s logged weight plus a new call's minimum
+ * weight (20) stays within budget. 0 if already under budget. Pure — log/now/budget are inputs. */
+export function weightWaitMs(log: WeightLogEntry[], now: number, budget: number): number {
+  const relevant = log.filter((e) => e.t > now - WEIGHT_WINDOW_MS);
+  const sum = relevant.reduce((a, e) => a + e.weight, 0);
+  if (sum + 20 <= budget) return 0;
+  const oldest = relevant.reduce((min, e) => Math.min(min, e.t), Infinity);
+  return Math.max(0, oldest + WEIGHT_WINDOW_MS - now);
+}
+
+const weightLog: WeightLogEntry[] = [];
+
+// Conservative per SPEC.md 3.3: 20 base + ceil(rows/20), where rows = the response array length
+// when the response itself is an array (candleSnapshot, fundingHistory, predictedFundings), else
+// 0 (metaAndAssetCtxs is a 2-element tuple — near enough to the base weight).
+function responseWeight(json: unknown): number {
+  const rows = Array.isArray(json) ? json.length : 0;
+  return 20 + Math.ceil(rows / 20);
+}
+
+function logWeight(weight: number) {
+  const now = Date.now();
+  weightLog.push({ t: now, weight });
+  while (weightLog.length && weightLog[0]!.t <= now - WEIGHT_WINDOW_MS) weightLog.shift();
+}
+
+// Test-only: the weight log is module-level (shared across every call in the process), so a test
+// file that fires many real postInfo calls (via a mocked global fetch) needs to start from a
+// clean budget instead of inheriting whatever other test files logged in the same 60s window.
+export function __resetWeightLogForTests(): void {
+  weightLog.length = 0;
+}
+
 // Sequential POST with ~200ms gap before the call, one retry on 429/5xx/network
 // error with a short backoff, then throw. Trust boundary: caller must not see
 // partial/garbled data, so we never swallow a final failure.
@@ -23,6 +65,14 @@ async function postInfo(
   fetchImpl: FetchImpl,
   attempt = 0,
 ): Promise<unknown> {
+  // A single wait based on the oldest logged entry isn't always enough -- a cluster of heavy
+  // responses can still be over budget once that one entry ages out -- so recheck after each
+  // wait until the log genuinely clears under budget.
+  let waitMs = weightWaitMs(weightLog, Date.now(), WEIGHT_BUDGET);
+  while (waitMs > 0) {
+    await sleep(waitMs);
+    waitMs = weightWaitMs(weightLog, Date.now(), WEIGHT_BUDGET);
+  }
   if (attempt > 0) {
     await sleep(RETRY_DELAY_MS);
   } else {
@@ -37,18 +87,22 @@ async function postInfo(
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch (err) {
+    logWeight(20); // failed call still consumed HL's rate-limit budget on their side
     if (attempt === 0) return postInfo(body, fetchImpl, attempt + 1);
     throw new Error(
       `Hyperliquid request failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
   if (!res.ok) {
+    logWeight(20); // ditto -- a 429 in particular means we're already close to their limit
     if ((res.status === 429 || res.status >= 500) && attempt === 0) {
       return postInfo(body, fetchImpl, attempt + 1);
     }
     throw new Error(`Hyperliquid HTTP ${res.status}`);
   }
-  return res.json();
+  const json = await res.json();
+  logWeight(responseWeight(json));
+  return json;
 }
 
 // Numeric strings from the HL API must parse to a finite number, not NaN/"" (Number("") is 0,
@@ -70,7 +124,7 @@ const CandleSchema = z.object({
   n: z.number(),
 });
 
-export type HlInterval = "1h" | "4h" | "1d" | "1w";
+export type HlInterval = "15m" | "1h" | "4h" | "1d" | "1w";
 
 const MAX_ROWS_PER_CALL = 5000;
 
@@ -248,4 +302,26 @@ export async function fetchSnapshot(
     dayNtlVlm: ctx.dayNtlVlm,
     predicted,
   };
+}
+
+// --- fetchOi: metaAndAssetCtxs -> per-coin OI (SPEC.md 3.3) ---
+
+export type OiResult =
+  | { coin: string; oiCoins: number; oiUsd: number }
+  | { coin: string; error: string };
+
+// One metaAndAssetCtxs call covers every requested coin. A coin missing from the universe (or
+// with no matching assetCtx) is reported as an error entry for that coin only — it must never
+// throw and lose the other coins' results.
+export async function fetchOi(coins: string[], fetchImpl: FetchImpl = fetch): Promise<OiResult[]> {
+  const metaJson = await postInfo({ type: "metaAndAssetCtxs" }, fetchImpl);
+  const [meta, assetCtxs] = MetaAndAssetCtxsSchema.parse(metaJson);
+
+  return coins.map((coin): OiResult => {
+    const index = meta.universe.findIndex((a) => a.name === coin);
+    if (index === -1) return { coin, error: `${coin} not found in Hyperliquid universe` };
+    const ctx = assetCtxs[index];
+    if (!ctx) return { coin, error: `${coin} has no assetCtx at index ${index}` };
+    return { coin, oiCoins: ctx.openInterest, oiUsd: ctx.openInterest * ctx.markPx };
+  });
 }

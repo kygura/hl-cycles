@@ -1,11 +1,16 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { getState, mergeHtfDaily, startScheduler } from "./refresh";
-import { loadCandles, loadFunding, loadOiHistory, readSnapshots } from "./store";
+import { loadCandles, loadFunding, loadOiHistory, loadAltFunding, loadAltOi, readSnapshots } from "./store";
 import { computeHtf, resampleWeekly, HALVINGS, type HtfPoint } from "./model/htf";
-import { computeLtf, type LtfInterval, type LtfPoint } from "./model/ltf";
+import { computeLtf, resampleCandles, type LtfInterval, type LtfPoint } from "./model/ltf";
 import { signals, overview } from "./model/composite";
-import type { Snapshot } from "./types";
+import { derivatives, predictedApr } from "./model/derivatives";
+import { ASSETS } from "./assets";
+import type { FundingRow, Snapshot } from "./types";
+
+const ASSET_LTF_LIMIT = 1500;
+const ALT_4H_BUCKET_MS = 14_400_000;
 
 const app = new Hono();
 
@@ -18,6 +23,8 @@ type Cache = {
   htf: HtfPoint[];
   ltf: Record<LtfInterval, LtfPoint[]>;
   lastSnapshotRow: Snapshot | null;
+  snapshots: Snapshot[];
+  funding: FundingRow[];
   counts: { candles1d: number; candles4h: number; candles1h: number; funding: number; snapshots: number };
 };
 let cache: Cache | null = null;
@@ -27,11 +34,12 @@ async function getCache(): Promise<Cache> {
   const key = `${state.lastRefresh}:${state.lastSnapshot}`;
   if (cache && cache.key === key) return cache;
 
-  const [bitstamp, hl1d, hl4h, hl1h, funding, snapshots, oiHistory] = await Promise.all([
+  const [bitstamp, hl1d, hl4h, hl1h, hl15m, funding, snapshots, oiHistory] = await Promise.all([
     loadCandles("bitstamp-1d"),
     loadCandles("hl-1d"),
     loadCandles("hl-4h"),
     loadCandles("hl-1h"),
+    loadCandles("hl-15m"),
     loadFunding(),
     readSnapshots(),
     loadOiHistory(),
@@ -43,6 +51,7 @@ async function getCache(): Promise<Cache> {
   const ltf: Record<LtfInterval, LtfPoint[]> = {
     "4h": computeLtf(hl4h, funding, snapshots, "4h", now, oiHistory),
     "1h": computeLtf(hl1h, funding, snapshots, "1h", now, oiHistory),
+    "15m": computeLtf(hl15m, funding, snapshots, "15m", now, oiHistory),
   };
 
   cache = {
@@ -50,6 +59,8 @@ async function getCache(): Promise<Cache> {
     htf,
     ltf,
     lastSnapshotRow: snapshots.length ? snapshots[snapshots.length - 1]! : null,
+    snapshots,
+    funding,
     counts: {
       candles1d: daily.length,
       candles4h: hl4h.length,
@@ -59,6 +70,40 @@ async function getCache(): Promise<Cache> {
     },
   };
   return cache;
+}
+
+// ponytail: one Map of (coin:interval) -> sliced LtfPoint[], rebuilt lazily per combo and
+// invalidated wholesale on the same lastRefresh:lastSnapshot key as `cache` above (SPEC.md 3.5).
+let assetCache: { key: string; points: Map<string, LtfPoint[]> } | null = null;
+
+async function getAssetLtf(coin: string, interval: LtfInterval): Promise<LtfPoint[]> {
+  const state = getState();
+  const key = `${state.lastRefresh}:${state.lastSnapshot}`;
+  if (!assetCache || assetCache.key !== key) assetCache = { key, points: new Map() };
+  const cacheKey = `${coin}:${interval}`;
+  const cached = assetCache.points.get(cacheKey);
+  if (cached) return cached;
+
+  const now = Date.now();
+  let points: LtfPoint[];
+  if (coin === "BTC") {
+    const { ltf } = await getCache();
+    points = ltf[interval];
+  } else {
+    const [hl1h, hl15m, funding, oiRows] = await Promise.all([
+      loadCandles(`hl-${coin}-1h`),
+      loadCandles(`hl-${coin}-15m`),
+      loadAltFunding(coin),
+      loadAltOi(coin),
+    ]);
+    const candles =
+      interval === "15m" ? hl15m : interval === "1h" ? hl1h : resampleCandles(hl1h, ALT_4H_BUCKET_MS);
+    points = computeLtf(candles, funding, [], interval, now, oiRows);
+  }
+
+  const sliced = points.slice(-ASSET_LTF_LIMIT);
+  assetCache.points.set(cacheKey, sliced);
+  return sliced;
 }
 
 function badRequest(c: any, error: z.ZodError) {
@@ -83,7 +128,7 @@ app.get("/api/overview", async (c) => {
   const state = getState();
   const price = lastSnapshotRow ? lastSnapshotRow.markPx : htf[htf.length - 1]?.c ?? 0;
   const crossVenueFunding = lastSnapshotRow
-    ? lastSnapshotRow.predicted.map((p) => ({ venue: p.venue, apr: (p.rate * 8760) / p.intervalHours }))
+    ? lastSnapshotRow.predicted.map((p) => ({ venue: p.venue, apr: predictedApr(p) }))
     : [];
   const ov = overview({
     htf,
@@ -106,13 +151,34 @@ app.get("/api/htf", async (c) => {
   return c.json({ candles, halvings: HALVINGS });
 });
 
-const ltfQuery = z.object({ interval: z.enum(["4h", "1h"]).default("4h") });
+app.get("/api/assets", (c) => c.json({ assets: ASSETS }));
+
+app.get("/api/derivatives", async (c) => {
+  const { snapshots, funding } = await getCache();
+  return c.json(derivatives(snapshots, funding, Date.now()));
+});
+
+const ltfQuery = z.object({
+  interval: z.enum(["15m", "1h", "4h"]).default("4h"),
+  coin: z.string().optional(),
+});
 
 app.get("/api/ltf", async (c) => {
   const parsed = ltfQuery.safeParse(c.req.query());
   if (!parsed.success) return badRequest(c, parsed.error);
-  const { ltf } = await getCache();
-  return c.json({ points: ltf[parsed.data.interval] });
+  const { interval, coin } = parsed.data;
+
+  // No coin: byte-identical to the pre-Phase-3 response (full BTC history, no slicing).
+  if (coin == null) {
+    const { ltf } = await getCache();
+    return c.json({ points: ltf[interval] });
+  }
+
+  if (!ASSETS.some((a) => a.coin === coin)) {
+    return c.json({ error: `unknown coin: ${coin}` }, 400);
+  }
+  const points = await getAssetLtf(coin, interval);
+  return c.json({ points });
 });
 
 const signalsQuery = z.object({

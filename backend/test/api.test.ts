@@ -100,6 +100,19 @@ describe("GET /api/overview", () => {
     expect(body.composite).toHaveProperty("bias");
     expect(body.composite).toHaveProperty("summary");
 
+    // 3b.2: composite.components is always 4, in key order, each word matching componentWord.
+    const { componentWord } = await import("../src/model/composite");
+    expect(body.composite.components.map((c: any) => c.key)).toEqual(["trend", "heat", "leverage", "momentum"]);
+    for (const c of body.composite.components) {
+      expect(c.word).toBe(componentWord(c.key, c.score));
+    }
+    expect(body.composite.label === null || typeof body.composite.label === "string").toBe(true);
+    expect(typeof body.composite.sentence).toBe("string");
+
+    // composite.summary stays byte-identical to summaryText() (pre-3b.2 regression guard).
+    const { summaryText } = await import("../src/model/composite");
+    expect(body.composite.summary).toBe(summaryText(body.htf.phase, body.ltf.state, body.composite.bias));
+
     expect(Object.keys(body.htf.features)).toEqual([
       "close", "sma50", "sma200", "mayer", "mayerPct", "drawdown", "sma200Slope30",
       "roc30", "roc365", "rv30", "rv30Pct", "daysSinceLow365", "tMayer", "tSlope",
@@ -178,6 +191,86 @@ describe("GET /api/ltf", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body).toHaveProperty("error");
+  });
+
+  // Regression guard (SPEC.md 3.5): the no-coin response must stay byte-identical to the
+  // pre-Phase-3 BTC view — full history, no slicing, computed the same way the endpoint always
+  // has (same fixture candles/funding, no snapshots/oi-history in this fixture set).
+  // NOTE: this only guards ROUTING (that the endpoint wires request -> computeLtf() -> response
+  // unchanged) — `expected` is computed with the same computeLtf() under test, so a bug shared by
+  // both sides would not be caught here. The golden check right below pins 3 fixed fixture points
+  // against hardcoded values so a model regression (not just a routing one) fails this file too.
+  test("?interval=4h without coin equals direct computeLtf() over the same fixture data (unchanged BTC view)", async () => {
+    const { computeLtf } = await import("../src/model/ltf");
+    const hl4h = JSON.parse(await readFile(join(dir, "candles-hl-4h.json"), "utf8"));
+    const funding = JSON.parse(await readFile(join(dir, "funding.json"), "utf8"));
+    const res = await app.request("/api/ltf?interval=4h");
+    const body = await res.json();
+    const expected = computeLtf(hl4h, funding, [], "4h", Date.now(), []);
+    expect(body.points).toEqual(expected);
+  });
+
+  // Golden check: 3 fixed points (first/mid/last of the 80-bar fixture) pinned to hardcoded
+  // state/leverage/momentum values, independent of computeLtf() itself, so a model regression in
+  // rawStateOf/blend/etc. fails even if routing stays correct.
+  test("?interval=4h golden values for 3 fixed fixture points", async () => {
+    const res = await app.request("/api/ltf?interval=4h");
+    const body = await res.json();
+    const at = (i: number) => {
+      const p = body.points[i];
+      return { state: p.state, leverage: p.leverage, momentum: p.momentum };
+    };
+    expect(at(0)).toEqual({ state: "insufficient_data", leverage: 0.10915898739070878, momentum: null });
+    expect(at(40)).toEqual({ state: "healthy_uptrend", leverage: 0.11674803673422095, momentum: 0.5203284527858406 });
+    expect(at(body.points.length - 1)).toEqual({
+      state: "neutral",
+      leverage: 0.12376566931617729,
+      momentum: 0.05637901587834538,
+    });
+  });
+
+  test("coin=ETH&interval=15m returns at most 1500 points", async () => {
+    const res = await app.request("/api/ltf?interval=15m&coin=ETH");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.points)).toBe(true);
+    expect(body.points.length).toBeLessThanOrEqual(1500);
+  });
+
+  test("coin=NOPE -> 400", async () => {
+    const res = await app.request("/api/ltf?interval=1h&coin=NOPE");
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toHaveProperty("error");
+  });
+});
+
+describe("GET /api/assets", () => {
+  test("200, equals ASSETS", async () => {
+    const { ASSETS } = await import("../src/assets");
+    const res = await app.request("/api/assets");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.assets).toEqual(ASSETS);
+  });
+});
+
+describe("GET /api/derivatives", () => {
+  test("200 with every key from SPEC.md 3b.3; empty DATA_DIR snapshot file still returns 200 with collecting: true", async () => {
+    const res = await app.request("/api/derivatives");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveProperty("now");
+    expect(body.windowMs).toBe(604_800_000);
+    expect(body).toHaveProperty("asOf");
+    expect(body).toHaveProperty("firstSnapshot");
+    expect(body.collecting).toBe(true); // this fixture's DATA_DIR has no snapshots.jsonl
+    expect(body.premium).toEqual({ points: [], last: null });
+    expect(body.oiUsd).toEqual({ points: [], last: null, change24h: null });
+    expect(body.volume24h).toEqual({ points: [], last: null });
+    expect(body.fundingApr).toHaveProperty("points");
+    expect(body.fundingApr).toHaveProperty("last");
+    expect(body.fundingApr).toHaveProperty("predicted");
   });
 });
 

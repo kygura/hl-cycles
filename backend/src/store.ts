@@ -6,7 +6,13 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Candle, FundingRow, OiRow, Snapshot } from "./types";
 
-export type CandleKey = "hl-1h" | "hl-4h" | "hl-1d" | "bitstamp-1d";
+export type CandleKey =
+  | "hl-1h"
+  | "hl-4h"
+  | "hl-1d"
+  | "bitstamp-1d"
+  | "hl-15m"
+  | `hl-${string}-${"15m" | "1h"}`;
 
 function dataDir(): string {
   return process.env.DATA_DIR ?? join(import.meta.dir, "..", "..", "data");
@@ -48,6 +54,16 @@ export function mergeByT<T extends { t: number }>(existing: T[], incoming: T[]):
   return [...byT.values()].sort((a, b) => a.t - b.t);
 }
 
+// Retention helpers for alt series (SPEC.md 3.3): applied at save time, after merging.
+// Rows must already be sorted ascending by t (every merge/store function here keeps that).
+export function keepLast<T>(rows: T[], n: number): T[] {
+  return rows.length <= n ? rows : rows.slice(rows.length - n);
+}
+
+export function keepSince<T extends { t: number }>(rows: T[], since: number): T[] {
+  return rows.filter((r) => r.t >= since);
+}
+
 function candlesPath(key: CandleKey): string {
   return join(dataDir(), `candles-${key}.json`);
 }
@@ -82,6 +98,59 @@ export async function loadOiHistory(): Promise<OiRow[]> {
 
 export async function saveOiHistory(rows: OiRow[]): Promise<void> {
   await atomicWrite(oiHistoryPath(), JSON.stringify(rows));
+}
+
+// Per-alt funding (data/funding-<COIN>.json, SPEC.md 3.3). BTC keeps its own data/funding.json
+// via loadFunding/saveFunding above, untouched.
+function altFundingPath(coin: string): string {
+  return join(dataDir(), `funding-${coin}.json`);
+}
+
+export async function loadAltFunding(coin: string): Promise<FundingRow[]> {
+  return readJsonArray<FundingRow>(altFundingPath(coin));
+}
+
+export async function saveAltFunding(coin: string, rows: FundingRow[]): Promise<void> {
+  await atomicWrite(altFundingPath(coin), JSON.stringify(rows));
+}
+
+// Per-alt Hyperliquid OI snapshots (data/oi-hl-<COIN>.json, SPEC.md 3.3), distinct from the
+// Binance-proxy data/oi-history.json used for BTC.
+function altOiPath(coin: string): string {
+  return join(dataDir(), `oi-hl-${coin}.json`);
+}
+
+export async function loadAltOi(coin: string): Promise<OiRow[]> {
+  return readJsonArray<OiRow>(altOiPath(coin));
+}
+
+export async function saveAltOi(coin: string, rows: OiRow[]): Promise<void> {
+  await atomicWrite(altOiPath(coin), JSON.stringify(rows));
+}
+
+// Persisted refresh state (SPEC.md 3.1): lets a fresh process (Vercel build, no scheduler run)
+// know lastRefresh/lastError without ever calling refreshAll() itself.
+export type PersistedState = { lastRefresh: number | null; lastError: string | null };
+
+function statePath(): string {
+  return join(dataDir(), "state.json");
+}
+
+export async function loadState(): Promise<PersistedState | null> {
+  const path = statePath();
+  if (!existsSync(path)) return null;
+  const raw = await readFile(path, "utf8").catch(() => "");
+  if (!raw.trim()) return null;
+  try {
+    return JSON.parse(raw) as PersistedState;
+  } catch {
+    // state.json is cosmetic (last-refresh display only); a corrupt file shouldn't crash refresh.
+    return null;
+  }
+}
+
+export async function saveState(state: PersistedState): Promise<void> {
+  await atomicWrite(statePath(), JSON.stringify(state));
 }
 
 function snapshotsPath(): string {

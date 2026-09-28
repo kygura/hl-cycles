@@ -1,6 +1,20 @@
-import { describe, expect, test } from "bun:test";
-import { fetchCandles, fetchFunding, fetchSnapshot } from "../src/sources/hyperliquid";
+import { describe, expect, test, beforeAll } from "bun:test";
+import {
+  fetchCandles,
+  fetchFunding,
+  fetchSnapshot,
+  fetchOi,
+  weightWaitMs,
+  __resetWeightLogForTests,
+} from "../src/sources/hyperliquid";
 import { fetchBitstampDaily } from "../src/sources/bitstamp";
+
+// This file's tests fire many real postInfo calls (via mocked fetch). Start with a clean weight
+// budget so an unrelated test file's calls in the same 60s window can't push this one over and
+// force a real (test-breaking) sleep.
+beforeAll(() => {
+  __resetWeightLogForTests();
+});
 
 function jsonRes(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -64,6 +78,16 @@ describe("fetchCandles", () => {
     }) as unknown as typeof fetch;
     await expect(fetchCandles("BTC", "1h", 0, 2000, fetchImpl)).rejects.toThrow();
     expect(calls).toBe(2);
+  });
+
+  test("passes the interval through in the request body (e.g. 15m)", async () => {
+    let capturedBody: any = null;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return jsonRes([]);
+    }) as unknown as typeof fetch;
+    await fetchCandles("ETH", "15m", 0, 2000, fetchImpl);
+    expect(capturedBody).toMatchObject({ type: "candleSnapshot", req: { coin: "ETH", interval: "15m" } });
   });
 });
 
@@ -138,6 +162,53 @@ describe("fetchSnapshot", () => {
       { venue: "BinPerp", rate: 0.00002801, intervalHours: 8 },
       { venue: "HlPerp", rate: 0.0000072019, intervalHours: 1 },
     ]);
+  });
+});
+
+describe("fetchOi", () => {
+  function metaAndCtxsRes(names: string[]) {
+    return jsonRes([
+      { universe: names.map((name) => ({ szDecimals: 5, name, maxLeverage: 20, marginTableId: 1 })) },
+      names.map((_name, i) => ({
+        funding: "0.00001",
+        openInterest: String(1000 + i),
+        prevDayPx: "10",
+        dayNtlVlm: "0",
+        premium: "0",
+        oraclePx: "10",
+        markPx: String(10 + i),
+        midPx: "10",
+        impactPxs: null,
+        dayBaseVlm: "0",
+      })),
+    ]);
+  }
+
+  test("parses metaAndAssetCtxs into per-coin OI; a coin missing from the universe is an error entry, not a throw", async () => {
+    const fetchImpl = (async () => metaAndCtxsRes(["ETH", "SOL"])) as unknown as typeof fetch;
+    const results = await fetchOi(["ETH", "NOPE"], fetchImpl);
+    expect(results).toEqual([
+      { coin: "ETH", oiCoins: 1000, oiUsd: 10000 },
+      { coin: "NOPE", error: "NOPE not found in Hyperliquid universe" },
+    ]);
+  });
+});
+
+describe("weightWaitMs", () => {
+  test("returns 0 when the trailing-60s sum is under budget", () => {
+    const log = [{ t: 1000, weight: 100 }];
+    expect(weightWaitMs(log, 2000, 1000)).toBe(0);
+  });
+
+  test("returns the wait until the oldest entry expires when sum + 20 > budget", () => {
+    const log = [{ t: 1000, weight: 990 }];
+    const now = 31_000; // still within the 60s window starting at t=1000
+    expect(weightWaitMs(log, now, 1000)).toBe(1000 + 60_000 - now);
+  });
+
+  test("ignores entries already outside the 60s window", () => {
+    const log = [{ t: 0, weight: 990 }];
+    expect(weightWaitMs(log, 61_000, 1000)).toBe(0);
   });
 });
 

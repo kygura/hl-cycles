@@ -3,8 +3,12 @@
 // called from cron.ts after a fresh collection.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { ASSETS } from "./assets";
+import type { LtfInterval } from "./model/ltf";
 
 const DEFAULT_OUT_DIR = join(import.meta.dir, "..", "..", "frontend", "dist", "api");
+
+const ASSET_LTF_INTERVALS: LtfInterval[] = ["15m", "1h", "4h"];
 
 // file -> API path. Must match frontend/src/api.ts's VITE_STATIC mapping.
 const ROUTES: Record<string, string> = {
@@ -16,7 +20,16 @@ const ROUTES: Record<string, string> = {
   "ltf-1h.json": "/api/ltf?interval=1h",
   "signals-HTF.json": "/api/signals?frame=HTF&limit=200",
   "signals-LTF.json": "/api/signals?frame=LTF&limit=200",
+  "assets.json": "/api/assets",
+  "derivatives.json": "/api/derivatives",
 };
+// One ltf-<COIN>-<interval>.json per asset (including BTC) x interval, for the Assets tab
+// (SPEC.md 3.5) — 36 files on top of the 10 entries above, 46 total (SPEC.md 3b).
+for (const { coin } of ASSETS) {
+  for (const interval of ASSET_LTF_INTERVALS) {
+    ROUTES[`ltf-${coin}-${interval}.json`] = `/api/ltf?interval=${interval}&coin=${coin}`;
+  }
+}
 
 // Returns a list of error strings (one per failed route), empty when everything exported.
 // NO_SCHEDULER must be set before server.ts's module-level scheduler guard runs, hence the

@@ -25,7 +25,9 @@ export type OiRow = {
   t: number;
   oiCoins: number;
   oiUsd: number;
-  src: "binance";
+  // "binance": Binance-proxy hourly OI (BTC backfill, data/oi-history.json). "hl": Hyperliquid
+  // metaAndAssetCtxs OI snapshots for alts (data/oi-hl-<COIN>.json), see SPEC.md 3.3.
+  src: "binance" | "hl";
 };
 
 export type Snapshot = {

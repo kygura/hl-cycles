@@ -53,12 +53,49 @@ function fmt(x: number): string {
   return (x >= 0 ? "+" : "-") + Math.abs(x).toFixed(2);
 }
 
-/** MODEL 3.1 summary string. */
-export function summaryText(htfPhase: HtfPhase | null, ltfState: LtfState, bias: number | null): string {
+/** MODEL 3.2: the summary sentence without the bias clause. */
+export function readSentence(htfPhase: HtfPhase | null, ltfState: LtfState): string {
   const htfText = htfPhase == null ? HTF_TEXT_NULL : HTF_TEXT[htfPhase];
   const ltfTextStr = LTF_TEXT[ltfState];
+  return `${htfText}; ${ltfTextStr}.`;
+}
+
+/** MODEL 3.1 summary string. Output must stay byte-identical across refactors (existing test). */
+export function summaryText(htfPhase: HtfPhase | null, ltfState: LtfState, bias: number | null): string {
   const biasText = bias == null ? "unavailable" : `${biasLabel(bias)} (${fmt(bias)})`;
-  return `${htfText}; ${ltfTextStr}. Bias: ${biasText}.`;
+  return `${readSentence(htfPhase, ltfState)} Bias: ${biasText}.`;
+}
+
+/** MODEL 3.3: component words for the Market Read "why" row. */
+export type ComponentKey = "trend" | "heat" | "leverage" | "momentum";
+export type Component = { key: ComponentKey; score: number | null; word: string | null };
+
+export function componentWord(key: ComponentKey, score: number | null): string | null {
+  if (score == null) return null;
+  switch (key) {
+    case "trend":
+      if (score >= 0.25) return "uptrend";
+      if (score > -0.25) return "sideways";
+      return "downtrend";
+    case "heat":
+      if (score >= 0.75) return "hot";
+      if (score >= 0.2) return "warm";
+      if (score > -0.35) return "mild";
+      if (score > -0.6) return "cool";
+      return "cold";
+    case "leverage":
+      if (score >= 0.5) return "crowded";
+      if (score >= 0.2) return "building";
+      if (score > -0.25) return "balanced";
+      if (score > -0.5) return "shorting";
+      return "squeezable";
+    case "momentum":
+      if (score >= 0.6) return "surging";
+      if (score >= 0.3) return "rising";
+      if (score > -0.3) return "flat";
+      if (score > -0.6) return "falling";
+      return "plunging";
+  }
 }
 
 /** Every committed HTF phase change and LTF state change, newest first. */
@@ -104,7 +141,13 @@ export type Overview = {
     momentum: number | null;
     features: Record<string, number | null>;
   };
-  composite: { bias: number | null; summary: string };
+  composite: {
+    bias: number | null;
+    summary: string;
+    label: BiasLabel | null;
+    sentence: string;
+    components: Component[];
+  };
   crossVenueFunding: { venue: string; apr: number }[];
 };
 
@@ -127,6 +170,17 @@ export function overview(params: {
   const ltfState: LtfState = l ? l.state : "insufficient_data";
 
   const bias = computeBias(h?.trend ?? null, l?.momentum ?? null, l?.leverage ?? null);
+  const htfPhase = h?.phase ?? null;
+  const trend = h?.trend ?? null;
+  const heat = h?.heat ?? null;
+  const leverage = l?.leverage ?? null;
+  const momentum = l?.momentum ?? null;
+  const components: Component[] = [
+    { key: "trend", score: trend, word: componentWord("trend", trend) },
+    { key: "heat", score: heat, word: componentWord("heat", heat) },
+    { key: "leverage", score: leverage, word: componentWord("leverage", leverage) },
+    { key: "momentum", score: momentum, word: componentWord("momentum", momentum) },
+  ];
 
   const htfFeatures: Record<string, number | null> = h
     ? {
@@ -201,7 +255,10 @@ export function overview(params: {
     },
     composite: {
       bias,
-      summary: summaryText(h?.phase ?? null, ltfState, bias),
+      summary: summaryText(htfPhase, ltfState, bias),
+      label: bias == null ? null : biasLabel(bias),
+      sentence: readSentence(htfPhase, ltfState),
+      components,
     },
     crossVenueFunding,
   };

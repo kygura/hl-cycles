@@ -2,7 +2,7 @@
 import type { Candle, FundingRow, OiRow, Snapshot } from "../types";
 import { blend, clamp, emaSeeded, realizedVol, percentileRank, roc, rsiWilder, commitWithHysteresis } from "./indicators";
 
-export type LtfInterval = "4h" | "1h";
+export type LtfInterval = "15m" | "1h" | "4h";
 
 export type LtfState =
   | "insufficient_data"
@@ -40,7 +40,42 @@ export type LtfPoint = Candle & {
 const CONSTS: Record<LtfInterval, { BAR: number; W30: number; W90: number; BARS_PER_YEAR: number }> = {
   "4h": { BAR: 14_400_000, W30: 180, W90: 540, BARS_PER_YEAR: 2190 },
   "1h": { BAR: 3_600_000, W30: 720, W90: 2160, BARS_PER_YEAR: 8760 },
+  "15m": { BAR: 900_000, W30: 2880, W90: 8640, BARS_PER_YEAR: 35040 },
 };
+
+// OHLCV resample into UTC-aligned buckets of bucketMs (SPEC.md 3.4). Used to derive alt 4h
+// candles from stored 1h candles (alts don't store 4h series). A leading bucket with fewer than
+// bucketMs/1h rows is dropped — it's a partial bucket from the start of the stored history, not
+// a real closed bar.
+export function resampleCandles(candles: Candle[], bucketMs: number): Candle[] {
+  const HOUR = 3_600_000;
+  const expectedRows = bucketMs / HOUR;
+  const sorted = [...candles].sort((a, b) => a.t - b.t);
+  const buckets = new Map<number, Candle[]>();
+  for (const c of sorted) {
+    const bucketT = Math.floor(c.t / bucketMs) * bucketMs;
+    const arr = buckets.get(bucketT);
+    if (arr) arr.push(c);
+    else buckets.set(bucketT, [c]);
+  }
+  const bucketTs = [...buckets.keys()].sort((a, b) => a - b);
+  const out: Candle[] = [];
+  for (let i = 0; i < bucketTs.length; i++) {
+    const t = bucketTs[i]!;
+    const rows = buckets.get(t)!; // already in ascending t order (sorted input)
+    if (i === 0 && rows.length < expectedRows) continue;
+    out.push({
+      t,
+      o: rows[0]!.o,
+      h: Math.max(...rows.map((r) => r.h)),
+      l: Math.min(...rows.map((r) => r.l)),
+      c: rows[rows.length - 1]!.c,
+      v: rows.reduce((a, r) => a + r.v, 0),
+      src: rows[rows.length - 1]!.src,
+    });
+  }
+  return out;
+}
 
 const FUNDING_BASE_APR = 0.0000125 * 8760; // 0.1095
 
@@ -106,29 +141,44 @@ export function computeLtf(
   const rv42 = realizedVol(c, 42, BARS_PER_YEAR);
   const rv42Pct = percentileRank(rv42, W90, W30);
 
-  // per-bar funding/premium aggregation: rows with bar.t <= row.t < bar.t + BAR
-  let fj = 0;
+  const HOUR = 3_600_000;
+  const fundingTs = fundingSorted.map((f) => f.t);
   const fundingApr: (number | null)[] = [];
   const premium: (number | null)[] = [];
-  for (const b of bars) {
-    while (fj < fundingSorted.length && fundingSorted[fj].t < b.t) fj++;
-    let k = fj;
-    let sr = 0;
-    let m = 0;
-    let sp = 0;
-    let mp = 0; // premium averages over only the rows that HAVE a premium (Binance rows can be null)
-    while (k < fundingSorted.length && fundingSorted[k].t < b.t + BAR) {
-      sr += fundingSorted[k].rate;
-      m++;
-      const p = fundingSorted[k].premium;
-      if (p != null) {
-        sp += p;
-        mp++;
-      }
-      k++;
+  if (BAR < HOUR) {
+    // Hyperliquid funding rows are hourly. A bar narrower than 1h has no funding row inside its
+    // own [b.t, b.t+BAR) window 3 times out of 4, which starves premiumZ's W30/2 threshold and
+    // leaves L null too often for commitWithHysteresis to ever commit away from insufficient_data
+    // (needs 2 consecutive non-null raw states in a row). Forward-fill from the latest funding
+    // row at or before the bar instead, bounded to 1h staleness so a real gap still goes null.
+    for (const b of bars) {
+      const idx = latestInWindow(fundingTs, b.t, HOUR);
+      fundingApr.push(idx == null ? null : fundingSorted[idx].rate * 8760);
+      premium.push(idx == null ? null : fundingSorted[idx].premium);
     }
-    fundingApr.push(m ? (sr / m) * 8760 : null);
-    premium.push(mp ? sp / mp : null);
+  } else {
+    // per-bar funding/premium aggregation: rows with bar.t <= row.t < bar.t + BAR
+    let fj = 0;
+    for (const b of bars) {
+      while (fj < fundingSorted.length && fundingSorted[fj].t < b.t) fj++;
+      let k = fj;
+      let sr = 0;
+      let m = 0;
+      let sp = 0;
+      let mp = 0; // premium averages over only the rows that HAVE a premium (Binance rows can be null)
+      while (k < fundingSorted.length && fundingSorted[k].t < b.t + BAR) {
+        sr += fundingSorted[k].rate;
+        m++;
+        const p = fundingSorted[k].premium;
+        if (p != null) {
+          sp += p;
+          mp++;
+        }
+        k++;
+      }
+      fundingApr.push(m ? (sr / m) * 8760 : null);
+      premium.push(mp ? sp / mp : null);
+    }
   }
 
   const premiumZ: (number | null)[] = premium.map((p, i) => {
@@ -138,6 +188,10 @@ export function computeLtf(
       const v = premium[j];
       if (v != null) w.push(v);
     }
+    // W30 is already sized per interval as "30 days of bars" (2880 15m bars = 720 1h bars = 180
+    // 4h bars), so W30/2 is a 15-day-elapsed threshold in every interval alike -- forward-filled
+    // sub-hour bars don't need a separate hourly sample count, they satisfy the same wall-clock bar
+    // count once real funding data has accumulated.
     if (w.length < W30 / 2) return null;
     const mean = w.reduce((a, b) => a + b, 0) / w.length;
     const variance = w.reduce((a, b) => a + (b - mean) ** 2, 0) / w.length;
@@ -147,7 +201,8 @@ export function computeLtf(
   // Snapshot near the bar wins; oi-history (Binance proxy) fills in only when no snapshot is near.
   type OiAt = { oiCoins: number | null; oiUsd: number | null; src: "snapshot" | "history" | null };
   function oiAt(at: number): OiAt {
-    const idx = latestInWindow(snapTs, at, 1_800_000);
+    // 1h window (was 30m): 30-minute collection cadence plus GitHub cron jitter left gaps.
+    const idx = latestInWindow(snapTs, at, 3_600_000);
     if (idx != null) return { oiCoins: snapsSorted[idx].oiCoins, oiUsd: snapsSorted[idx].oiUsd, src: "snapshot" };
     const hIdx = latestInWindow(oiHistTs, at, OI_HISTORY_WINDOW_MS);
     if (hIdx != null) return { oiCoins: oiHistSorted[hIdx].oiCoins, oiUsd: oiHistSorted[hIdx].oiUsd, src: "history" };

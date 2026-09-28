@@ -4,12 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   mergeByT,
+  keepLast,
+  keepSince,
   loadCandles,
   saveCandles,
   loadFunding,
   saveFunding,
   appendSnapshot,
   readSnapshots,
+  saveState,
+  loadState,
 } from "../src/store";
 import { mergeHtfDaily } from "../src/refresh";
 import type { Candle, Snapshot } from "../src/types";
@@ -94,6 +98,58 @@ describe("snapshots append", () => {
       await appendSnapshot(snap(2));
       const all = await readSnapshots();
       expect(all.map((s) => s.t)).toEqual([1, 2]);
+    });
+  });
+});
+
+describe("keepLast", () => {
+  test("keeps only the last n items", () => {
+    expect(keepLast([1, 2, 3, 4, 5], 3)).toEqual([3, 4, 5]);
+  });
+  test("returns the array unchanged when it has fewer than n items", () => {
+    expect(keepLast([1, 2], 5)).toEqual([1, 2]);
+  });
+});
+
+describe("keepSince", () => {
+  test("keeps rows with t >= since, drops the rest", () => {
+    const rows = [{ t: 1 }, { t: 5 }, { t: 10 }];
+    expect(keepSince(rows, 5)).toEqual([{ t: 5 }, { t: 10 }]);
+  });
+});
+
+describe("alt candle keys", () => {
+  test("an alt key round-trips and writes to candles-hl-<COIN>-<interval>.json", async () => {
+    await withTmpDataDir(async () => {
+      const rows = [candle(1000, 1)];
+      await saveCandles("hl-ETH-1h", rows);
+      expect(await loadCandles("hl-ETH-1h")).toEqual(rows);
+      const raw = await readFile(join(process.env.DATA_DIR!, "candles-hl-ETH-1h.json"), "utf8");
+      expect(JSON.parse(raw)).toEqual(rows);
+    });
+  });
+
+  test("a BTC 15m key round-trips and writes to candles-hl-15m.json", async () => {
+    await withTmpDataDir(async () => {
+      const rows = [candle(2000, 1)];
+      await saveCandles("hl-15m", rows);
+      const raw = await readFile(join(process.env.DATA_DIR!, "candles-hl-15m.json"), "utf8");
+      expect(JSON.parse(raw)).toEqual(rows);
+    });
+  });
+});
+
+describe("state.json", () => {
+  test("loadState returns null when the file does not exist", async () => {
+    await withTmpDataDir(async () => {
+      expect(await loadState()).toBeNull();
+    });
+  });
+
+  test("saveState then loadState round-trips", async () => {
+    await withTmpDataDir(async () => {
+      await saveState({ lastRefresh: 123, lastError: "oops" });
+      expect(await loadState()).toEqual({ lastRefresh: 123, lastError: "oops" });
     });
   });
 });

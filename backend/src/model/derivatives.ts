@@ -6,7 +6,7 @@ import type { FundingRow, OiRow, Snapshot } from "../types";
 // come from the multi-year backfill (funding.json, oi-history.json); premium and volume only
 // exist in snapshots, so those series stay sparse until snapshots cover the window.
 const WINDOW_MS = 7_776_000_000; // 90 days
-const OI_BACKFILL_MAX_AGE_MS = 6 * 3_600_000; // older backfill loses to fresher HL snapshots
+const OI_BACKFILL_MAX_AGE_MS = 48 * 3_600_000; // Binance Vision zips publish ~1d late + daily cron; beyond this HL snapshots win
 const HOUR_MS = 3_600_000;
 
 export type Pt = [t: number, v: number];

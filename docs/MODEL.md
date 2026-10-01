@@ -476,3 +476,208 @@ Candidate fix: rank `drawdown` and `roc365` by rolling percentile over a 4-year 
 - **An LTF `downtrend` state was added.** Without it, orderly selling with balanced leverage fell into `neutral`, and neutral would have been about 55% of bars in a bearish year.
 - **`rv30`, `rv42`, their percentiles and the halving cycle are display-only.** Adding them to the scores did not improve the landmark fit, and cycle timing is a narrative, not an input to measure. They still appear in `features` for the dashboard.
 - **Known ceiling:** the LTF sample is one bearish year, and it had no OI history. Revisit the `L` thresholds (±0.5) once the store holds a bull period and at least 30 days of snapshots.
+
+## 8. Vector + Compass (Phase 4)
+
+Code: `backend/src/model/compass.ts` (lenses), `backend/src/model/vector.ts` (regime, levels, brief, payload), helpers in `indicators.ts`. Served at `GET /api/vector` (`vector.json`), shape per `SPEC.md` 4.4 + 4.7. Pure functions over the stored series; nothing here fetches.
+
+### 8.1 Daily spine, alignment, carry-forward
+
+- **Spine** = the HTF daily series (§1.1: merged Bitstamp + Hyperliquid, gap-filled, closed days only). `price[i]` is its close. Every output series has one value per spine day.
+- **Alignment.** A source row matches a spine day only on the exact UTC day (`t` already floored by the adapters). Then `carry(x, 10)`: a missing day takes the last value for at most **10** consecutive days, after that it is `null`. This covers weekends/holidays (FRED), the weekly `DTWEXBGS` print and the ~7-day bitcoin-data delay.
+- **Flows** (`etf-flow-btc`): days with no row between the first and last row read **0** (no print = no flow), days after the last row are unknown; rolling sums are taken first, then the sum is carried ≤ 10 days. So the live reading is the last complete window carried forward, and it **can be revised** when bitcoin-data's delayed rows land (a day first read as "after the last row" becomes a real print, and a day zero-filled inside the range can gain a value). Pinned by `vector-model.test.ts` "ETF tail".
+- **As-of** of an input = `t` of its source's last row. `oldestInputAsOf` = the oldest as-of over the six regime condition sources (D8; those drive the label).
+- Derived metrics are computed on the carried daily series (so a 7-day mean at a 3-day-old tail includes 3 carried days).
+- **Staleness limitation:** `stale` only checks the age of each source's *last* row. An interior gap longer than 10 days (a source outage later backfilled only partly) makes the input null, so that condition reads "not stressed" for those days, without any flag in the payload.
+
+### 8.2 Compass
+
+**Percentile (D4).** `pct[i]` = §0 pctRank of `x[i]` over the trailing **1460** spine days, minimum **365** non-null values (so the window expands from 365 to 1460 days, null before). Scores are 0–100: `score = 100·pct` for polarity `+`, `100·(1 − pct)` for `−`. The payload's `inputs[].pct` is the raw percentile (before polarity), so `p90` on the dollar means "dollar high", which pulls Macro down.
+
+**Lens** = mean of its non-null input scores; `null` when fewer than half of its inputs are present (`2·present < n`). **Headline** = mean of the non-null forward lenses (Macro, Capital Flows, Investor Behaviour, On-chain Fundamentals) under the same half rule. `d7`/`d30` = score today minus score 7/30 spine days ago (point change, null if either is null). Band = `floor(score / 20)`, 100 → band 5.
+
+**Inputs and polarity (the one table).** `30/365` means `mean(x[i−29..i]) / mean(x[i−364..i])`. `chg30` means `x[i]/x[i−30] − 1`. Unit `pct` values are percent points.
+
+| Lens | Input key | Formula | Source | Unit | Pol. | History from |
+|---|---|---|---|---|---|---|
+| Macro | `dollar_vs_200d` | `DTWEXBGS / SMA200(DTWEXBGS) − 1` (200 **observations**, business days) ×100 | FRED | pct | − | 2006 |
+| Macro | `us10y_chg90d` | `DGS10[i] − DGS10[i−90]` (calendar days, pp) | FRED | pct | − | 1962 |
+| Macro | `curve_10y2y` | `T10Y2Y` (pp) | FRED | pct | + | 1976 |
+| Macro | `policy_gap` | `DGS2 − DFEDTARU` (pp; positive = market prices hikes) | FRED | pct | − | 2008-12 |
+| Macro | `btc_vs_spx_30d` | `(chg30(price) − chg30(SP500)) × 100` | spine, FRED | pct | + | 2016-10 |
+| Capital Flows | `stables_roc30` | `chg30(total stablecoin mcap) × 100` | DefiLlama | pct | + | 2017-11 |
+| Capital Flows | `realized_cap_chg30` | `chg30(RealizedCapUSD) × 100` | CoinMetrics | pct | + | 2010 |
+| Capital Flows | `etf_flow_30d` | 30-day sum of daily ETF net flow | bitcoin-data | btc | + | 2024-01-11 (+365 d) |
+| Capital Flows | `exchange_supply_chg30` | `chg30(SplyExNtv) × 100` | CoinMetrics | pct | − | 2011 |
+| Investor Behaviour | `sth_sopr_30d` | 30-day mean of STH-SOPR | bitcoin-data | ratio | + | 2022-10 |
+| Investor Behaviour | `price_vs_sth` | `price / STH realized price` | spine, bitcoin-data | ratio | + | 2022-10 |
+| Investor Behaviour | `exchange_inflow_ratio` | `FlowInExNtv` 30/365 | CoinMetrics | ratio | − | 2011 |
+| Investor Behaviour | `fear_greed` | Fear & Greed, **contrarian** (extreme fear scores as accumulating) | alternative.me | index | − | 2018-02 |
+| On-chain Fundamentals | `active_addresses` | `AdrActCnt` 30/365 | CoinMetrics | ratio | + | 2009 |
+| On-chain Fundamentals | `tx_count` | `TxCnt` 30/365 | CoinMetrics | ratio | + | 2009 |
+| On-chain Fundamentals | `fees_btc` | `FeeTotNtv` 30/365 | CoinMetrics | ratio | + | 2009 |
+| On-chain Fundamentals | `hashrate` | `HashRate` 30/365 | CoinMetrics | ratio | + | 2009 |
+| Cycle Position | `mvrv` | `CapMVRVCur` | CoinMetrics | ratio | + | 2010 |
+| Cycle Position | `nupl` | NUPL | bitcoin-data | ratio | + | 2022-10 |
+| Cycle Position | `supply_in_profit` | `supply-profit (BTC) / SplyCur × 100` | bitcoin-data, CoinMetrics | pct | + | 2022-10 |
+| Cycle Position | `htf_heat` | HTF heat `H` (§1.5) | spine | index | + | 2013 |
+| Derivatives | `funding_apr` | 7-day mean of the daily mean of `rate × 8760 × 100` | funding.json | pct | + | 2020 |
+| Derivatives | `oi_to_mcap` | daily mean `oiUsd` / `CapMrktCurUSD` × 100 | oi-history.json, CoinMetrics | pct | + | 2020-09 |
+| Derivatives | `dvol` | Deribit DVOL | Deribit | index | + | 2021-03 |
+| Derivatives | `skew_25d` | 25Δ put IV − call IV, ~30d (calls bid = froth = low skew) | options-skew.json | index | − | builds daily; null until 365 snapshots |
+| Derivatives | `hl_premium` | 7-day mean of the daily mean of funding-row `premium × 100` | funding.json | pct | + | 2020 |
+| Rotation | `alts_beating_btc` | share (0–100) of HL alts whose 30d return beats BTC's | alt 1h candles (23:00 UTC close) | pct | + | ~125 d retention |
+| Rotation | `alts_funding_hot` | share (0–100) of HL alts whose 7-day mean hourly funding > 0.0000125 (resting rate) | alt funding | pct | + | ~125 d retention |
+
+**Collected, not yet scored:** `putCallOi` (Σ put OI / Σ call OI over every listed Deribit option) is stored daily in `options-skew.json` next to `skew25d`. Snapshot-only history can't be backfilled, so it is kept from day one; it enters no lens yet.
+
+Rotation inputs are already cross-sectional percentages and alt series are retained for only 125 days (SPEC 3.3), so a 365-day time percentile would never exist. **Deviation from D4:** they are scored as-is (`score = share`), and a breadth is null below 5 reporting alts. Price / realized price is not a separate Cycle input: it equals MVRV up to the price source, so it would double-weight one signal.
+
+**Bands (5 per lens, low → high):**
+
+| Lens | Bands |
+|---|---|
+| Headline | Risk-Off, Defensive, Neutral, Constructive, Risk-On |
+| Macro | Tightening, Restrictive, Neutral, Accommodative, Expansionary |
+| Capital Flows | Drained, Light, Neutral, Healthy, Flush |
+| Investor Behaviour | Distributing, Soft, Neutral, Firm, Accumulating |
+| On-chain Fundamentals | Contracting, Soft, Neutral, Expanding, Hot |
+| Cycle Position (standalone) | Capitulation, Cold, Neutral, Warm, Euphoria |
+| Derivatives (standalone) | Deleveraged, Light, Neutral, Heavy, Frothy |
+| Rotation (standalone) | BTC Season, BTC-Led, Mixed, Alt-Led, Altseason |
+
+### 8.3 Vector regime
+
+**Stress conditions** (fixed set of six, D5). Each is evaluated on the carried series; a `null` input (missing beyond 10 days, or before its history) counts as **not stressed**.
+
+| key | true when | payload `value` |
+|---|---|---|
+| `price_below_sth` | `price < STH realized price` | STH cost basis (USD) |
+| `sth_sopr_below_1` | 7-day mean of STH-SOPR `< 1` | the 7d mean |
+| `price_below_tmm` | `price < True Market Mean` | TMM (USD) |
+| `downside_vol_high` | `dsv30 > median(dsv30[i−364..i])`, with `dsv30 = sqrt(mean_{30d}(min(lr, 0)²) · 365)`, `lr = ln(c[k]/c[k−1])`; median needs all 365 values | `dsv30 / median` |
+| `stables_contracting` | `chg30(total stablecoin mcap) < 0` | the change, pct |
+| `etf_outflow_7d` | 7-day sum of ETF net flow `< 0`; always false before 2024-01-11 | the sum, BTC |
+
+`riskOff = (# true) / 6`, never renormalized. **Start:** the first spine day where STH cost basis, TMM, STH-SOPR 7d, the semivol median, stablecoin chg30 and momentum all exist: **2022-10-07**. Before that `state`, `riskOff` are null (history still carries price and momentum). No proxies are used before bitcoin-data's 2022-10-01 start: STH-SOPR has no open proxy, and a VWAP of one exchange's volume is not a cohort cost basis. Fabricating two of six conditions would bias `riskOff` low for a decade of history.
+
+**Momentum** in [−100, 100]:
+
+```
+momentum[i] = 100 · (1/3) · Σ_{k ∈ {20, 50, 200}} tanh( ln(c[i] / c[i−k]) / (0.035 · √k) )
+```
+
+`0.035` is BTC's long-run daily log-return σ, so each lookback is scaled by its own expected 1σ move. Equal weights. Null before index 200.
+
+**Flows** = `chg30(RealizedCapUSD) × 100` (percent; sign is what matters). Exposed as `regime.flows`.
+
+**Raw state** (SPEC thresholds, unchanged by calibration):
+
+```
+strong_risk_on   if riskOff = 0    and momentum > 0 and flows > 0
+mild_risk_on     if riskOff ≤ 0.25 and momentum > 0          (≤ 1 of 6 conditions)
+strong_risk_off  if riskOff ≥ 0.5  and momentum < 0          (≥ 3 of 6)
+mild_risk_off    otherwise
+```
+
+**Hysteresis:** `commitWithHysteresis(raw, () => 3)`: a new state commits only after the same raw state holds **3** consecutive daily closes; the first defined day commits immediately.
+
+**Allocation** (% BTC): strong_risk_on 100, mild_risk_on 66, mild_risk_off 33, strong_risk_off 0.
+
+**Flip** = the committed state reaches the **opposite extreme**: `strong_risk_on` after the last extreme was `strong_risk_off`, or the reverse (100% BTC ↔ 0% BTC, the moves Glassnode dates). Mild states are graded steps and are not flips. `flips[].from` is the committed state of the previous day. `regime.since` = first day of the **current committed state's** run (so the hero's day count is days in the printed state).
+
+**Stale** (D5/D8): true when any of the six condition sources' as-of is null or more than 10 days before the last spine day (ETF exempt while the last day is before 2024-01-11; the semivol input is the spine itself).
+
+### 8.4 Key levels
+
+All on the spine, carried ≤ 10 days. `distancePct = (price / level − 1) × 100` (positive: price above). Status over the last two closes: `holding` if `price > level` on both, `lost` if `price ≤ level` on both (a close exactly on the level counts as below), `contested` otherwise; null if either level value is missing.
+
+| key | value | proxy |
+|---|---|---|
+| `sth_cost_basis` | bitcoin-data `sth-realized-price` | no |
+| `true_market_mean` | bitcoin-data `true-market-mean` | no |
+| `realized_price` | CoinMetrics `RealizedPriceUSD` | no |
+| `lth_realized_price` | bitcoin-data `lth-realized-price` | no |
+| `mean_mvrv_price` | realized price × expanding mean of `CapMVRVCur` since 2010-07 (no look-ahead) | no |
+| `sma200` | HTF `sma200` | no |
+| `etf_cost_basis` | `Σ close·inflow / Σ inflow` over days with ETF net flow > 0 since 2024-01-11 | **yes** |
+
+### 8.5 WoC phase
+
+```
+strong_uptrend if price > TMM and price > STH-CB
+capitulation   if price < both and STH-CB < TMM
+bear           if price < both
+transition     otherwise          (null if STH-CB or TMM is missing)
+```
+
+### 8.6 Brief and D7 note
+
+Sentences, in order, each emitted only when its inputs exist (4–6 in practice). `{usd}` = `$73.3K` style, `{±n}` = signed with U+2212.
+
+1. `The Vector regime reads {state words} ({allocation}% BTC) for {days} days since {since}, with {k} of 6 stress conditions active; {trigger}.` Trigger on the risk-on side: `momentum below zero or 2 active conditions would end risk-on`; on the risk-off side: `risk-on needs positive momentum with at most 1 active condition`.
+2. STH cost basis, above: `Price holds above the short-term holder cost basis ({usd}) for {n} sessions; a daily close below it would end the stretch.` Below: `Price sits below the short-term holder cost basis ({usd}) for {n} sessions; two daily closes back above it would reclaim it.` `n` = consecutive closes on the current side.
+3. Same for the True Market Mean, with the WoC break rule as trigger: `one daily close below it is a slip, a second confirms the break.`
+4. `Momentum reads {±m} against {±m7} a week ago; a move through zero would flip its leg of the regime.`
+5. `Realized cap changed {±x}% over 30 days, the {p}th percentile of the last four years; a turn negative would remove / positive would restore the flows leg of strong risk-on.`
+6. `The Compass headline is {score} ({band}), {±d30} points over 30 days; {weakest forward lens} is the weakest forward lens at {score} ({band}).`
+
+`confirm` = `a daily close above the {nearest level above price} ({usd}) with realized cap growing`; `invalidate` = `a daily close below the {nearest level below price} ({usd})`; null when no level is on that side.
+
+`regime.htfNote` (D7, DESIGN 14.4.1, complete): risk-on state with HTF phase `distribution`, `markdown` or `capitulation`, or risk-off state with `expansion` → `HTF phase reads {PHASE} — the cycle frame disagrees with the regime.` Otherwise null.
+
+### 8.7 Gauges and macro strip
+
+Gauges `{now, lastWeek (7 days ago), avg52w (mean of non-null values over the last 365 days), scale}`: `risk = riskOff × 100` (0–100), `momentum` (−100–100), `fundamentals` = On-chain Fundamentals lens (0–100), `flows` = Capital Flows lens (0–100). Macro strip: `dollarVs200d` = the Compass input at the last spine day (percent); `us10y`, `us2y`, `fedFundsUpper`, `curve` = the FRED value at the last spine day, carried ≤ 10 days (pp), i.e. the same value the Macro lens scores (an observation dated after the last spine close is not shown yet); `spxCorr30d` = Pearson correlation of daily log returns of BTC and the S&P 500 over the last 30 S&P trading-day returns (days present in both); `macro.asOf` = the oldest last observation among the six FRED series.
+
+Rounding in the payload: prices and levels 2 dp, riskOff 3 dp, momentum and scores 1 dp, input values 4 significant digits. `vector.json` is about 1.2 MB with full daily history.
+
+### 8.8 Calibration (2026-10-01, data to 2026-09-28)
+
+**What was tuned:** no threshold. The SPEC raw-state thresholds (0.25 / 0.5 / momentum 0 / flows 0) and the 3-close hysteresis are used as written. Momentum weights are equal and its σ is fixed a priori. One definition was chosen after looking at the data: a **flip is an extreme-to-extreme move** (8.3). Counting every risk-on/risk-off side change instead gives 5 / 13 / 10 / 7 side changes in 2023 / 2024 / 2025 / 2026, driven mostly by two noisy conditions (`etf_outflow_7d`, and `downside_vol_high`, which is true about half the time by construction), so mild states chatter around the 1-condition boundary.
+
+Flip list (committed, extreme-to-extreme):
+
+| # | date | from → to | price |
+|---|---|---|---|
+| 1 | 2023-10-28 | mild_risk_on → strong_risk_on | 34,102 |
+| 2 | 2024-05-02 | mild_risk_off → strong_risk_off | 59,103 |
+| 3 | 2024-06-01 | mild_risk_on → strong_risk_on | 67,811 |
+| 4 | 2024-06-26 | mild_risk_off → strong_risk_off | 60,857 |
+| 5 | 2024-09-28 | mild_risk_on → strong_risk_on | 65,860 |
+| 6 | 2025-02-27 | mild_risk_off → strong_risk_off | 84,732 |
+| 7 | 2025-05-04 | mild_risk_on → strong_risk_on | 94,257 |
+| 8 | 2025-08-31 | mild_risk_off → strong_risk_off | 108,227 |
+| 9 | 2025-09-15 | mild_risk_on → strong_risk_on | 115,370 |
+| 10 | 2025-10-23 | mild_risk_off → strong_risk_off | 110,063 |
+| 11 | 2026-05-06 | mild_risk_off → strong_risk_on | 81,401 |
+| 12 | 2026-05-21 | strong_risk_on → strong_risk_off | 77,587 |
+| 13 | 2026-08-26 | mild_risk_on → strong_risk_on | 79,026 |
+
+| target (±30 d) | result |
+|---|---|
+| risk-on 2024-09-22 | **hit**, 2024-09-28 (+6 d) |
+| risk-off 2025-10-12 | **hit**, 2025-10-23 (+11 d) |
+| risk-on 2026-08-21 | **hit**, 2026-08-26 (+5 d) |
+| ≤ 4 flips per calendar year | 2022: 0, 2023: 1, 2024: 4, 2025: **5 (miss)**, 2026: 3 (to 09-28) |
+| 2022 mostly risk-off | **hit**: 86 of 86 days strong_risk_off (regime starts 2022-10-07) |
+
+Days per committed state by year: 2023 strong-off 49 / mild-off 215 / mild-on 70 / strong-on 31 (stablecoin supply shrank all year, so `stables_contracting` held one condition on through the rally); 2024 56 / 77 / 127 / 106; 2025 108 / 76 / 40 / 141; 2026 (to 09-28) 180 / 43 / 10 / 38.
+
+Robustness: `ON_MAX` anywhere in 0.17–0.34 gives the same 13 flips (conditions come in sixths). `OFF_MIN = 0.67` loses the 2024 and 2025 targets. Momentum weights 1/2/3 (slower) give 9 flips with the same three hits but the 2025 off-flip moves to 2025-11-08 (+27 d) and 2025 still has 5.
+
+**Compass headline vs the Glassnode baseline** (different inputs; same architecture):
+
+| date | Glassnode | ours | lenses (macro / flows / behaviour / fundamentals) |
+|---|---|---|---|
+| 2026-06-18 | 14 Risk-Off | 32.4 Defensive | 34.5 / 7.0 / 42.7 / 45.5 |
+| late Jul | Risk-Off → Defensive | 37.6 Defensive (07-22) | 38.9 / 16.1 / 48.9 / 46.3 |
+| 2026-09-15 | 23 Defensive | 50.7 Neutral | 45.3 / 59.1 / 46.4 / 52.1 |
+
+Same direction (rising from June to September) and the same Macro read (Restrictive), but ours sits 18–28 points higher. Behaviour and Fundamentals stay near the middle where Glassnode's (LTH share, Hodler Net Position, new-user growth) read weak; our Capital Flows lens recovers faster on stablecoin growth and ETF inflows. Not tuned: two reference points are not enough to fit seven lenses without overfitting. A pro-cyclical Fear & Greed (polarity +) moves June to 27 but September to 54, so the contrarian SPEC reading is kept.
+
+**Level checks vs WoC (2026-09-24..28):** STH-CB 72,876 (WoC 73.3K), TMM 78,826 (77.2K), realized price 53,575 (~53.5K) match. Mean MVRV price 105,077 vs WoC 96.7K: the CoinMetrics expanding mean MVRV since 2010 is ~1.96 against Glassnode's ~1.81. ETF cost basis proxy 81,555 vs ~86K break-even (inflow-weighted closes, no redemptions; marked proxy).
+
+Regression guard: `backend/test/vector-regression.test.ts` runs `buildVector` on frozen real inputs (`test/fixtures/vector-regression/`, 2022-09-01 → 2026-09-28) and pins the start day, all 13 flips above and three riskOff/momentum/headline anchors. A change there is a model change: update this section with it.
+
+Known ceilings: the regime has three years of history (one full cycle leg); Rotation only covers the last ~95 days and an 11-coin universe (WoC quotes a broad alt universe, so its 6% / 19% readings are not comparable); skew enters Derivatives only after 365 daily snapshots.

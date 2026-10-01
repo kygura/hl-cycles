@@ -1,12 +1,14 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { getState, mergeHtfDaily, startScheduler } from "./refresh";
-import { loadCandles, loadFunding, loadOiHistory, loadAltFunding, loadAltOi, readSnapshots } from "./store";
+import { loadCandles, loadFunding, loadOiHistory, loadAltFunding, loadAltOi, readSnapshots, loadSeriesFile, loadState } from "./store";
 import { computeHtf, resampleWeekly, HALVINGS, type HtfPoint } from "./model/htf";
 import { computeLtf, resampleCandles, type LtfInterval, type LtfPoint } from "./model/ltf";
 import { signals, overview } from "./model/composite";
 import { derivatives, predictedApr } from "./model/derivatives";
-import { ASSETS } from "./assets";
+import { buildVector, type VectorPayload } from "./model/vector";
+import { VECTOR_SOURCES } from "./vectorSources";
+import { ASSETS, ALTS } from "./assets";
 import type { FundingRow, OiRow, Snapshot } from "./types";
 
 const ASSET_LTF_LIMIT = 1500;
@@ -109,6 +111,33 @@ async function getAssetLtf(coin: string, interval: LtfInterval): Promise<LtfPoin
   return sliced;
 }
 
+// Phase 4 vector payload (SPEC 4.4): built lazily on first request and memoized on `cache`'s
+// lastRefresh:lastSnapshot key plus every series file's fetchedAt (a vector-fetch run between two
+// refreshes must still show up).
+let vectorCache: { key: string; body: VectorPayload } | null = null;
+
+async function getVector(): Promise<VectorPayload> {
+  const base = await getCache();
+  // A corrupt file degrades to no data (inputs go stale) instead of failing the route or the export.
+  const files = await Promise.all(VECTOR_SOURCES.map((s) => loadSeriesFile(s.file).catch(() => ({ series: {}, fetchedAt: null }))));
+  const key = `${base.key}:${files.map((f) => f.fetchedAt).join(",")}`;
+  if (vectorCache && vectorCache.key === key) return vectorCache.body;
+  const [alts, persisted] = await Promise.all([
+    Promise.all(ALTS.map(async (coin) => ({ coin, candles1h: await loadCandles(`hl-${coin}-1h`), funding: await loadAltFunding(coin) }))),
+    loadState(),
+  ]);
+  const body = buildVector({
+    htf: base.htf,
+    series: Object.assign({}, ...files.map((f) => f.series)),
+    funding: base.funding,
+    oi: base.oiHistory,
+    alts,
+    sources: persisted?.vectorSources ?? {},
+  });
+  vectorCache = { key, body };
+  return body;
+}
+
 function badRequest(c: any, error: z.ZodError) {
   return c.json({ error: error.issues[0]?.message ?? "invalid query params" }, 400);
 }
@@ -160,6 +189,8 @@ app.get("/api/derivatives", async (c) => {
   const { snapshots, funding, oiHistory } = await getCache();
   return c.json(derivatives(snapshots, funding, Date.now(), oiHistory));
 });
+
+app.get("/api/vector", async (c) => c.json(await getVector()));
 
 const ltfQuery = z.object({
   interval: z.enum(["15m", "1h", "4h"]).default("4h"),

@@ -49,6 +49,24 @@ beforeAll(async () => {
   const funding = syntheticFunding(hl4h[0]!.t, FIXED_NOW, BAR_1H);
   await writeFile(join(dir, "funding.json"), JSON.stringify(funding));
 
+  // Phase 4 vector series over the fixture's last 600 days (shape test only, values synthetic).
+  const days = (JSON.parse(bitstampRaw) as Candle[]).slice(-600);
+  const rows = (f: (c: number, i: number) => number) => days.map((d, i) => ({ t: d.t, v: f(d.c, i) }));
+  const file = (series: Record<string, unknown>) => JSON.stringify({ series, fetchedAt: 1 });
+  await writeFile(join(dir, "onchain-bg.json"), file({
+    "sth-realized-price": rows((c) => c * 0.9),
+    "true-market-mean": rows((c) => c * 0.85),
+    "lth-realized-price": rows((c) => c * 0.5),
+    "sth-sopr": rows(() => 1.01),
+    "etf-flow-btc": rows(() => 100),
+  }));
+  await writeFile(join(dir, "onchain-cm.json"), file({
+    RealizedCapUSD: rows((_, i) => 1e12 + i * 1e9),
+    RealizedPriceUSD: rows((c) => c * 0.6),
+    CapMVRVCur: rows(() => 1.6),
+  }));
+  await writeFile(join(dir, "stables.json"), file({ totalStablecoinMcapUSD: rows((_, i) => 2e11 + i * 1e8) }));
+
   // NO_SCHEDULER must be set before server.ts (module-level scheduler guard) loads.
   const mod = await import("../src/server");
   app = mod.app;
@@ -321,5 +339,63 @@ describe("GET /api/signals", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body).toHaveProperty("error");
+  });
+});
+
+describe("GET /api/vector", () => {
+  test("200 with the SPEC 4.4 + 4.7 shape", async () => {
+    const res = await app.request("/api/vector");
+    expect(res.status).toBe(200);
+    const v = await res.json();
+    expect(Object.keys(v).sort()).toEqual(
+      ["asOf", "brief", "compass", "flips", "gauges", "history", "levels", "macro", "oldestInputAsOf", "regime", "sources", "stale", "wocPhase"].sort(),
+    );
+    expect(typeof v.asOf).toBe("number");
+    expect(typeof v.oldestInputAsOf).toBe("number");
+    expect(typeof v.stale).toBe("boolean");
+
+    const r = v.regime;
+    expect(["strong_risk_on", "mild_risk_on", "mild_risk_off", "strong_risk_off"]).toContain(r.state);
+    expect([0, 33, 66, 100]).toContain(r.allocation);
+    expect(typeof r.since).toBe("number");
+    expect(r.riskOff).toBeGreaterThanOrEqual(0);
+    expect(r.riskOff).toBeLessThanOrEqual(1);
+    expect(Math.abs(r.momentum)).toBeLessThanOrEqual(100);
+    expect(r).toHaveProperty("htfNote");
+    expect(r.conditions).toHaveLength(6);
+    for (const c of r.conditions) expect(Object.keys(c).sort()).toEqual(["asOf", "key", "label", "on", "value"]);
+
+    for (let i = 1; i < v.flips.length; i++) expect(v.flips[i].t).toBeGreaterThan(v.flips[i - 1].t);
+    expect(v.history.length).toBeGreaterThan(5000);
+    expect(Object.keys(v.history[0]).sort()).toEqual(["momentum", "price", "riskOff", "state", "t"]);
+
+    expect(Object.keys(v.compass.headline).sort()).toEqual(["band", "d30", "d7", "score"]);
+    expect(v.compass.lenses.map((l: { key: string }) => l.key)).toEqual(["macro", "flows", "behaviour", "fundamentals", "cycle", "derivatives", "rotation"]);
+    for (const l of v.compass.lenses) {
+      for (const x of l.inputs) {
+        expect(Object.keys(x).sort()).toEqual(["asOf", "key", "label", "pct", "unit", "value"]);
+        expect(["pct", "ratio", "usd", "btc", "index", "count", "z"]).toContain(x.unit);
+      }
+    }
+    expect(Object.keys(v.compass.history[0]).sort()).toEqual(
+      ["behaviour", "cycle", "derivatives", "flows", "fundamentals", "headline", "macro", "rotation", "t"],
+    );
+
+    expect(v.levels.filter((l: { value: number | null }) => l.value != null).length).toBeGreaterThanOrEqual(5);
+    for (const l of v.levels) expect(Object.keys(l).sort()).toEqual(["distancePct", "key", "label", "proxy", "status", "value"]);
+    const sth = v.levels.find((l: { key: string }) => l.key === "sth_cost_basis");
+    expect(sth.distancePct).toBeGreaterThan(0); // price above a level 10% below it -> positive
+    expect(sth.status).toBe("holding");
+
+    for (const k of ["risk", "momentum", "fundamentals", "flows"]) {
+      expect(Object.keys(v.gauges[k]).sort()).toEqual(["avg52w", "lastWeek", "now", "scale"]);
+    }
+    expect(v.gauges.momentum.scale).toEqual({ min: -100, max: 100 });
+    expect(v.gauges.risk.scale).toEqual({ min: 0, max: 100 });
+    expect(Object.keys(v.macro).sort()).toEqual(["asOf", "curve", "dollarVs200d", "fedFundsUpper", "spxCorr30d", "us10y", "us2y"]);
+    expect(v.wocPhase).toBe("strong_uptrend");
+    expect(v.brief.sentences.length).toBeGreaterThanOrEqual(4);
+    expect(v.brief.sentences.length).toBeLessThanOrEqual(6);
+    expect(v.sources).toEqual({});
   });
 });

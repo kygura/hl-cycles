@@ -77,7 +77,9 @@ export function resampleCandles(candles: Candle[], bucketMs: number): Candle[] {
   return out;
 }
 
-const FUNDING_BASE_APR = 0.0000125 * 8760; // 0.1095
+/** HL resting (neutral) hourly funding rate (MODEL 3.4); shared with the Compass rotation lens. */
+export const HL_NEUTRAL_HOURLY = 0.0000125;
+const FUNDING_BASE_APR = HL_NEUTRAL_HOURLY * 8760; // 0.1095
 
 /** Rightmost index with ts[idx] <= upper and ts[idx] >= upper - windowMs, else null. ts must be ascending. */
 function latestInWindow(ts: number[], upper: number, windowMs: number): number | null {

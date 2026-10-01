@@ -165,3 +165,59 @@ export function rsiWilder(c: number[], period: number): (number | null)[] {
   }
   return out;
 }
+
+export const DAY = 86_400_000;
+
+// --- Phase 4 daily-spine helpers (MODEL 8.1). `Series` is one value per spine day, null = missing.
+export type Row = { t: number; v: number };
+export type Series = (number | null)[];
+
+/**
+ * Values of `rows` on a gap-free ascending daily spine, exact-day match only. With `zero`, days
+ * between the first and last row that have no row read 0 (flows: no print = no flow).
+ */
+export function onSpine(rows: Row[], spine: number[], zero = false): Series {
+  const byT = new Map(rows.map((r) => [r.t, r.v]));
+  const first = rows.length ? rows[0]!.t : Infinity;
+  const last = rows.length ? rows[rows.length - 1]!.t : -Infinity;
+  return spine.map((t) => byT.get(t) ?? (zero && t >= first && t <= last ? 0 : null));
+}
+
+/** Forward-fill a null that follows a value, for at most `max` consecutive days (D5). */
+export function carry(x: Series, max: number): Series {
+  let last: number | null = null;
+  let age = 0;
+  return x.map((v) => {
+    if (v != null) {
+      last = v;
+      age = 0;
+      return v;
+    }
+    age++;
+    return last != null && age <= max ? last : null;
+  });
+}
+
+/** Trailing mean of x[i-k+1..i]; null if any value in the window is null. */
+export function rollMean(x: Series, k: number): Series {
+  return x.map((_, i) => {
+    if (i < k - 1) return null;
+    let s = 0;
+    for (let j = i - k + 1; j <= i; j++) {
+      const v = x[j];
+      if (v == null) return null;
+      s += v;
+    }
+    return s / k;
+  });
+}
+
+/** x[i] / x[i-k] - 1, null-propagating. */
+export function change(x: Series, k: number): Series {
+  return x.map((v, i) => (i >= k && v != null && x[i - k] != null && x[i - k] !== 0 ? v / (x[i - k] as number) - 1 : null));
+}
+
+/** Elementwise a op b, null if either side is null. */
+export function zip(a: Series, b: Series, f: (x: number, y: number) => number | null): Series {
+  return a.map((x, i) => (x == null || b[i] == null ? null : f(x, b[i] as number)));
+}

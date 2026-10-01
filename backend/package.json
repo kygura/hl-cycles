@@ -6,7 +6,8 @@
     "dev": "bun --watch src/server.ts",
     "backfill": "bun src/backfill.ts",
     "cron": "bun src/cron.ts",
-    "export": "bun src/export.ts"
+    "export": "bun src/export.ts",
+    "vector-fetch": "bun src/vectorSources.ts"
   },
   "dependencies": {
     "hono": "^4.13.9",

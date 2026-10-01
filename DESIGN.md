@@ -473,3 +473,369 @@ These are asks for the backend; the UI degrades as noted until they exist.
 - No crosshair sync across HTF/LTF (different time domains, would mislead).
 - No export/screenshot/share.
 - No mobile-specific gestures beyond what lightweight-charts provides.
+
+## 14. Phase 4: Vector view (landing)
+
+Design for SPEC.md Phase 4 (4.4 API, 4.5 content, D7/D8). Research basis: `docs/research/bitcoin-vector.md` §1, §2, §6. The Vector block becomes the top of the BTC view; everything that exists today (MarketRead, CycleVector, DerivativesPanel, main chart with frames, SignalTable) stays below it unchanged as the drill-down. Nothing in sections 1–13 is revoked; this section only adds.
+
+### 14.1 Intent and reading order
+
+The page answers *"should I be in Bitcoin right now, and what would change that answer?"* in the first screen. The Glassnode/Swissblock appeal comes from four things, and the layout is built to deliver them in this order:
+
+1. **Regime word in under five seconds.** One word pair (`STRONG RISK-ON`), one colour, one allocation bar, one "since" date. Nothing else competes at that size.
+2. **Why.** Four speedometer gauges (risk, momentum, fundamentals, flows) with today / last week / 52w markers, then the Compass headline and seven lens tiles. Both are the *inputs* to the word above; the eye moves from conclusion to evidence.
+3. **Where.** The regime-coloured long-horizon price chart with numbered flips, and the key-levels ladder with a Status column. This is the "map" the newsletter is built around.
+4. **What would change it.** The brief: numbered claims, each with its trigger, plus explicit confirm / invalidate lines in the hero.
+5. **Drill-down.** A section divider, then the existing components. The HTF phase, derivatives and signals are still here, demoted.
+
+Tone rule for all Vector copy (from §6 of the research): declarative, plain English, no exclamation marks, no metaphors outside titles. Every claim prints its number. The UI shows text the API produced; it does not compose sentences.
+
+### 14.2 Layout
+
+#### 14.2.1 At 1440
+
+Same 12-column grid, gutters and page padding as §2.1. The `[BTC][Assets]` view toggle **moves into the StatusBar** right cluster (`[BTC][Assets]  ? Phase guide`), so the hero is the first thing under the 40px bar. `StatusBar` gains props `view: "btc" | "assets"` and `onViewChange(v)`; the free-floating `.segmented` above `.app-grid` in `App.tsx` is deleted. The `Assets` view is unchanged.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ StatusBar  hl-cycles · BTC $83,675 · as of …  [● live]   [BTC][Assets] [?]   │ 40
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ RegimeHero            span 5 │ Gauges (4 × Gauge)                     span 7 │
+│ ▌STRONG RISK-ON              │  RISK        MOMENTUM   FUNDAMENTALS  FLOWS   │
+│ ▌100% BTC ████████████████   │   ╭──╮        ╭──╮        ╭──╮        ╭──╮    │ ~210
+│ ▌since 2026-08-21 · day 41   │   33          +42         61          +2.4%   │
+│ ▌inputs as of 2026-09-29     │  elevated    bullish     strong      inflow   │
+│ ▌HTF phase reads DISTRIBUTION│  last wk 41 · 52w 27  …                       │
+│ ▌confirm ▲ …  invalidate ▼ … │  ● today  ○ last week  | 52w avg              │
+├──────────────────────────────┴──────────────────────────┬────────────────────┤
+│ RegimeChart  Regime · BTC/USD daily · log  [1Y][4Y][All] [levels] │ CompassPanel  │
+│  (log price line coloured by regime, flip callouts ①②③)│  COMPASS           │
+│  ─────────────────────────────────────────────────────  │  23  Defensive     │ 420
+│  ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪ dot strip ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪  │  7d +3 · 30d +9 ~~ │
+│  ◼strong-off ◼mild-off ◼mild-on ◼strong-on  ① 2024-09-22│  Macro        18 … │
+│                                                  span 8 │  Flows        31 … │
+│                                                         │  Behaviour    27 … │
+│                                                         │  Fundamentals 16 … │
+│                                                         │  ── standalone ──  │
+│                                                         │  Cycle        44 … │
+│                                                         │  Derivatives  22 … │
+│                                                         │  Rotation      9 … │
+│                                                         │             span 4 │
+├─────────────────────────────────────┬───────────────────┴────────────────────┤
+│ LevelsTable                  span 5 │ Brief                           span 7 │
+│ METRIC          LEVEL   DIST  STATUS│  1  Price holds above the STH cost …  │ ~260
+│ Mean MVRV price 96,700 +15.6% lost  │     ↳ a daily close below $73.3K …    │
+│ ETF cost basis~ 86,000  +2.8% lost  │  2  …                                 │
+│ ── price 83,675 ──────────────────  │  3  …                                 │
+│ TMM             77,200  −7.7% holding│ …                                     │
+│ STH cost basis  73,300 −12.4% holding│                                       │
+├─────────────────────────────────────┴────────────────────────────────────────┤
+│ MacroStrip  DOLLAR VS 200D +1.8% │ US 10Y 5.29% │ US 2Y 4.89% │ FED FUNDS 4.00% │ 56
+│             CURVE 10Y−2Y +0.40 │ BTC·SPX CORR 30D +0.42 │ as of 2026-09-30     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ ▸ sources · 6 ok · 1 failing                                                 │ 32
+├──────────────────────────────────────────────────────────────────────────────┤
+│ ── DRILL-DOWN · HTF PHASE · LEVERAGE · CHART · SIGNALS ─────────────────────  │ 32
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ MarketRead (§6.2)     span 7 │ CycleVector (§6.3)                     span 5 │
+│ DerivativesPanel (§6.8)  · main chart with frames (§6.4/6.5) · ▸ Signal history │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Rows 1–4 plus the sources line form the **Vector block**; it is one `VectorView` component that renders five `section.region` panels into the shared grid (not one giant panel), so gutters and panel rules match the rest of the page. The hero and the gauges share **one** region (span 12) split internally 5/7 with a 1px `--border-subtle` vertical rule, because the gauges are the hero's evidence and must read as one unit.
+
+Heights are content-sized except: RegimeChart body 420px; CompassPanel is `align-self: stretch` so it matches the chart row (tiles are 44px each, headline block 112px, divider 24px: 112 + 7×44 + 24 = 444, which fits the chart region's 420 + header 32).
+
+The **Drill-down divider** is a `div.vx-divider.span-12`: `label` style `--ink-300`, text `Drill-down · HTF phase · leverage · chart · signals`, a 1px `--border-subtle` rule filling the rest of the row, 32px tall, no panel. MarketRead and CycleVector keep their own headers and content exactly as §6.2–6.3; they are not renamed.
+
+#### 14.2.2 At 1024
+
+- Hero/gauge region stacks internally: hero full width as a horizontal row (word + allocation left, since/inputs/notes right), then the four gauges in one row below (each gauge 128px wide). Region height ~300.
+- RegimeChart span 12 at 380px. CompassPanel span 12 below it: headline block left (span 4 of an inner grid), tiles in a 4-column grid for the forward lenses and a 3-column grid for the standalone lenses, each tile 72px tall (two-line layout: name + score on line 1, band + deltas on line 2, track below).
+- LevelsTable span 6, Brief span 6.
+- MacroStrip wraps to two rows of three cells.
+- Page padding 16px, as §2.2.
+
+#### 14.2.3 Below 900 (stacked)
+
+Single column, in this order: StatusBar (the view toggle stays in the bar; the price hides below 480px), RegimeHero, Gauges as a 2×2 grid (gauge 140px wide), CompassPanel (headline, then one tile per row), RegimeChart at 300px with the legend/flip row wrapping, LevelsTable (drops the `Distance` column; the distance moves into the Level cell as a second `figure-sm` line), Brief, MacroStrip as a two-column definition list, sources line, Drill-down divider, then the existing stacked order from §2.3. No horizontal page scroll.
+
+### 14.3 Tokens
+
+Additions to `theme.css` `:root` and `tokens.ts`. No existing token changes value or name.
+
+#### 14.3.1 Regime palette (4)
+
+Adapted from Vector's coral / salmon / periwinkle / royal blue to the Ledger dark surfaces. The two risk-off states share a red hue and the two risk-on states share a blue hue; strength is lightness (strong = more saturated, mild = lighter/pastel). Red↔blue is safe for protan/deutan vision, and within a hue the strong/mild pair differs by ≥ 3 contrast steps, so it survives greyscale too. Text use is permitted for all four on `--surface-100/200/300`; graphics use is permitted everywhere.
+
+| State (API) | Token | Value | Word shown | Contrast on `--surface-100` / `-200` / `-300` |
+|---|---|---|---|---|
+| `strong_risk_off` | `--regime-strong-off` | `#f66a6a` | `STRONG RISK-OFF` | 6.3 / 5.8 / 5.1 |
+| `mild_risk_off` | `--regime-mild-off` | `#f0a894` | `MILD RISK-OFF` | 9.4 / 8.6 / 7.6 |
+| `mild_risk_on` | `--regime-mild-on` | `#a9b7f7` | `MILD RISK-ON` | 9.5 / 8.7 / 7.7 |
+| `strong_risk_on` | `--regime-strong-on` | `#7484f5` | `STRONG RISK-ON` | 5.6 / 5.1 / 4.5 |
+
+All four pass 4.5:1 for text on every Ledger surface and 3:1 for graphics. `#3b4bdb` (Vector's actual royal blue) is 2.8:1 on `--surface-100` and is rejected; `#7484f5` is the nearest royal blue that passes. It sits close to `--accent` (`#5b84f0`), so inside Vector components **`--accent` is not used for fills or bars**; `--accent` keeps its §3.1 jobs (focus ring, links, segmented control) and blue fills inside the Vector block always mean "Risk-On".
+
+Binding: the regime words are `RISK-ON` / `RISK-OFF` with `STRONG` / `MILD`. The Vector marketing labels (Euphoria, Accumulation, Caution, Capitulation) are **never shown**; they collide with the HTF phase vocabulary in §3.3.
+
+#### 14.3.2 Compass band ramp (5)
+
+Positional, lowest → highest band, aliased onto the regime palette so the user learns one vocabulary (low = red/off, high = blue/on):
+
+| Band index (score) | Token | Value |
+|---|---|---|
+| 1 (0–20) | `--band-1` | `var(--regime-strong-off)` |
+| 2 (20–40) | `--band-2` | `var(--regime-mild-off)` |
+| 3 (40–60) | `--band-3` | `#9aa3ad` (same value as `--st-neutral`) |
+| 4 (60–80) | `--band-4` | `var(--regime-mild-on)` |
+| 5 (80–100) | `--band-5` | `var(--regime-strong-on)` |
+
+The ramp is used **only** for the headline and the four forward lenses, where high genuinely means risk-on. The three standalone lenses (Cycle Position, Derivatives, Rotation) have no good/bad direction (a high Cycle score is euphoria, which is amber in the rest of the app), so their tiles are **monochrome**: track segments `--ink-300`, score `--ink-100`. The pole words carry the meaning. Band index is derived client-side from the score (`floor(score / 20)`, 100 → 5) because D4 fixes bands at 20/40/60/80.
+
+`tokens.ts` additions: `REGIME_VAR: Record<RegimeState, string>`, `REGIME_TOKEN` (the `var()` form, built like `PHASE_TOKEN`), `REGIME_WORD: Record<RegimeState, string>`, `BAND_VAR: readonly [string, string, string, string, string]`. Charts resolve hex through the existing `css()` helper.
+
+#### 14.3.3 Typography: the regime word
+
+Swissblock prints its big number in a serif. **Decision: no serif.** Ledger has one UI face and one mono face, every live figure and every phase word is already Plex Mono, and a third family for a single element would read as a different product bolted on. Instead the hero gets one new role:
+
+| Role | Font | Size / line | Weight | Use |
+|---|---|---|---|---|
+| `figure-xl` | mono | 36 / 40 (28 / 32 below 900) | 500 | the regime word in RegimeHero, nothing else |
+
+Add `.t-figure-xl` next to the other roles in `theme.css`. The word is uppercase mono, letter-spacing `0.02em`, coloured with its regime token; it is the only element on the page in this role, which is what makes it the headline. The Compass headline score stays at `figure-lg` so it does not compete.
+
+### 14.4 Components
+
+All live under `components/vector/`. Each receives already-typed slices of the `/api/vector` response (`Vector` type in `api.ts`, mirrored from SPEC 4.4) and computes **nothing but pixel positions and string formatting**. Constants that mirror MODEL.md §8 thresholds live in one file, `components/vector/scales.ts`, with a comment pointing at MODEL.md §8; if the model moves a threshold, that file changes, nothing else.
+
+Class prefix `.vx-`. Shared states per component unless stated: `loading` renders the region header and a flat `--surface-200` block of the final height (§7); `error` renders `failed to load — retry` (§7 partial state); the retry callback is one `retryVector()` shared by the block.
+
+#### 14.4.1 `RegimeHero`
+
+Props: `regime: Vector["regime"]`, `asOf: string`, `oldestInputAsOf: string`, `stale: boolean`, `brief: Vector["brief"]`, `htfPhase: HtfPhase | null` (from `overview.htf.phase`).
+
+Anatomy (top to bottom inside the hero cell, which has a 3px left border in the regime colour, `padding-left: 13px` so content aligns with 16px):
+
+```
+▌STRONG RISK-ON                               ← figure-xl, --regime-strong-on
+▌100% BTC  [████████████████████████████████]  ← allocation bar
+▌since 2026-08-21 · day 41                    ← figure-sm --ink-200
+▌inputs as of 2026-09-29        [● stale]     ← figure-sm --ink-300 (+ pill when stale)
+▌HTF phase reads DISTRIBUTION — the cycle     ← body --ink-200, only when they disagree
+▌frame disagrees with the regime.
+▌CONFIRM     a daily close above $86.0K …     ← label --ink-300 + body --ink-200
+▌INVALIDATE  a daily close below $77.2K …
+```
+
+- **Word:** `REGIME_WORD[regime.state]`. Null state → `—` in `--ink-300` and the left border `--border`.
+- **Allocation bar:** `{allocation}% BTC` in `figure` `--ink-100`, then a 160px × 8px track `--surface-300` radius 4 filled from the left to `allocation%` in the regime colour. `role="meter" aria-valuemin=0 aria-valuemax=100 aria-valuenow={allocation} aria-valuetext="{allocation}% BTC"`. The remainder is cash; print `· {100 − allocation}% cash` in `figure-sm` `--ink-300` after the track.
+- **Since:** `since {fmtDate(regime.since)} · day {daysBetween(regime.since, asOf)}`. Day count is `floor((asOf − since) / 86 400 000)`; day 0 on the flip day.
+- **Inputs as-of (D8):** always printed: `inputs as of {fmtDate(oldestInputAsOf)}`. When `stale` is true, append the pill `● stale · carrying forward` (`--warning` on `--warning-subtle`, §3.5 pill shape) and give the whole hero/gauge region a 1px `--warning` top border (same rule MarketRead uses).
+- **D7 disagreement note:** shown only when the pair is in this table; otherwise the row is omitted (no empty space):
+
+  | Regime | HTF phase | Note |
+  |---|---|---|
+  | `*_risk_on` | `distribution`, `markdown`, `capitulation` | `HTF phase reads {PHASE} — the cycle frame disagrees with the regime.` |
+  | `*_risk_off` | `expansion` | `HTF phase reads EXPANSION — the cycle frame disagrees with the regime.` |
+
+  The phase word is uppercase mono coloured with its `--ph-*` token (§3.3 rule: colour plus word). `accumulation`+off and `euphoria`+off/on are not disagreements. This table is the full rule; the implementer must not extend it.
+- **Confirm / invalidate:** two rows, `label` `--ink-300` keyword in a 96px column, `body` `--ink-200` text from `brief.confirm` / `brief.invalidate`. Null → `—`.
+
+#### 14.4.2 `Gauge` (×4, plain SVG)
+
+Props: `label: string`, `now: number | null`, `lastWeek: number | null`, `avg52w: number | null`, `scale: GaugeScale` (from `scales.ts`), `fmt: (v: number) => string`.
+
+`GaugeScale = { min, max, zones: { to: number; color: BandVar; word: string }[] }`. Fixed scales, in `scales.ts`:
+
+| Gauge | API field | Display domain | Zones (upper bound → colour, word) | Source of thresholds |
+|---|---|---|---|---|
+| RISK | `gauges.risk` (riskOff 0–1, shown ×100) | 0–100 | 25 → `--band-4` `low risk`; 50 → `--band-3` `elevated`; 100 → `--band-2` `high risk` | SPEC 4.3 state rule (0.25 / 0.5) |
+| MOMENTUM | `gauges.momentum` | −100…100 | 0 → `--band-2` `bearish`; 100 → `--band-4` `bullish` (exactly 0 → `--band-3` `flat`) | sign |
+| FUNDAMENTALS | `gauges.fundamentals` | 0–100 | 40 → `--band-2` `weak`; 60 → `--band-3` `neutral`; 100 → `--band-4` `strong` | D4 band edges |
+| FLOWS | `gauges.flows` (realized-cap 30d %) | −10…+10 %, clamped | 0 → `--band-2` `outflow`; 10 → `--band-4` `inflow` (exactly 0 → `flat`) | sign; domain see 14.8 |
+
+Zones deliberately use the **mild** colours; the strong colours are reserved for the regime word and the chart, so the gauges read as evidence, not as four more verdicts.
+
+SVG: `viewBox="0 0 160 100"`, CSS width 100% of its cell, max 168px, `preserveAspectRatio="xMidYMid meet"`.
+- Arc centre (80, 84), radius 62, stroke 10, `stroke-linecap: butt`, from 180° (left, `min`) to 0° (right, `max`). Angle for value v: `θ = π × (1 − (clamp(v) − min) / (max − min))`.
+- Track: full semicircle in `--surface-300`. Zone arcs: one `<path>` per zone over the track, zone colour at `opacity: 0.4`. Zones are a mnemonic; markers and the number carry the reading.
+- Zone boundaries: 1px `--border-strong` radial ticks, 14px long, straddling the arc.
+- **52w avg:** a 2px × 16px `--ink-300` radial tick just outside the arc (radius 68–84). Omitted when null.
+- **Last week:** hollow circle r=5 on the arc centreline, stroke 1.5px `--ink-200`, no fill. Omitted when null.
+- **Today:** filled circle r=5.5 in the zone colour at full opacity, with a 1.5px `--ink-100` outer ring. Drawn last. Omitted when `now` is null. If `now` is outside the domain (flows), it is drawn at the arc end and the number keeps the true value with a `›` / `‹` suffix.
+- Below the arc, HTML (not SVG text): eyebrow above the SVG `label` `--ink-300`; the number `figure-lg` in the zone colour (`—` `--ink-300` when null); the zone word `body` `--ink-200`; sub-row `figure-sm` `--ink-300`: `last wk {fmt(lastWeek)} · 52w {fmt(avg52w)}` (nulls `—`).
+- `role="meter" aria-valuemin={min} aria-valuemax={max} aria-valuenow={now} aria-valuetext="{label} {fmt(now)}, {word}; last week {fmt(lastWeek)}; 52-week average {fmt(avg52w)}"` on the gauge wrapper. The SVG itself is `aria-hidden`.
+- One legend line under the row of four, `figure-sm` `--ink-300`, right-aligned: `● today  ○ last week  | 52w avg`.
+
+#### 14.4.3 `RegimeChart` (lightweight-charts v5)
+
+Props: `history: Vector["history"]`, `flips: Vector["flips"]`, `levels: Vector["levels"]`, `asOf: string`.
+
+Region header: `Regime · BTC/USD daily · log`; right: segmented `[1Y][4Y][All]` (default `4Y`) and a toggle button `levels` (`aria-pressed`, segmented styling, single button). Body 420px (380 at 1024, 300 below 900), `ResizeObserver` as the other charts, shared chart theme §9.
+
+Series, in draw order:
+1. **Dot strip** — `HistogramSeries`, `priceScaleId: "regime"`, `scaleMargins: { top: 0.965, bottom: 0 }`, every point `value: 1`, `color` = regime hex of `history[i].state` at 85% alpha, `priceLineVisible: false`, `lastValueVisible: false`. Same technique as the LTF state strip (§6.5); reads as the Vector dot strip under the axis.
+2. **Price** — `LineSeries`, `lineWidth: 1.5`, per-point `color` = regime hex of `history[i].state` (v5 `LineData.color`), `rightPriceScale.mode: Logarithmic`, `lastValueVisible: true`, `priceLineVisible: false`. Points with null `state` (before the model has enough inputs) use `--ink-300`.
+3. **Flip callouts** — `createSeriesMarkers` on the price series, one per entry in `flips`, chronological 1-based index as `text`, `shape: "circle"`, `color: --ink-200`, `size: 1`, `position: "aboveBar"` when `to` is a risk-off state, `"belowBar"` when risk-on. This is the "inflection point" numbering.
+4. **Key levels** — when the toggle is on: `createPriceLine` on the price series per level with non-null `value`: `color --ink-300`, `lineWidth 1`, `lineStyle: Dashed`, `axisLabelVisible: true`, `title: level.label` (proxy levels get `~` appended). Toggle default: **on at 1Y, off at 4Y/All** (lines bunch on a log scale over long ranges); changing the range preset resets the toggle to that default, after which the user's click wins until the next preset change.
+
+Range presets: `1Y`/`4Y` → `timeScale.setVisibleRange({ from: asOf − N×365d, to: asOf })`; `All` → `fitContent()`. Double-click resets to the active preset. Scroll/zoom native.
+
+Under the chart, one row (`figure-sm`, wraps below 900): the four regime swatches + words (`◼ strong risk-off  ◼ mild risk-off  ◼ mild risk-on  ◼ strong risk-on`), then the **last four flips** right-aligned: `③ 2026-08-21 · mild risk-off → strong risk-on · 63,420`. Older flips are listed in the row's `title`. If `flips` is empty: `no regime flips in history`.
+
+Tooltip (HTML overlay, top-left, §6.4 style): `2025-10-12 · 110,230 · MILD RISK-OFF · risk 50 · mom −31`, the regime word coloured by its token.
+
+`aria-label="Bitcoin daily log price coloured by Vector regime, {first date} to {asOf}"`.
+
+#### 14.4.4 `CompassPanel`
+
+Props: `compass: Vector["compass"]`.
+
+Region header: `Market compass · 7 lenses · 4y percentile`. Body, top to bottom:
+
+**Headline block** (112px): eyebrow `COMPASS · HEADLINE`; row: score `figure-lg` coloured `--band-{idx}` (`—` `--ink-300` if null), band word `body` `--ink-100` (`compass.headline.band` as the API gives it; `insufficient history` if score is null), right-aligned `7d {fmtDeltaPts(d7)} · 30d {fmtDeltaPts(d30)}` `figure-sm` `--ink-300`; below, the existing `Sparkline` (§6.9) at `height=32` over the last 365 `compass.history[].headline` points (nulls dropped; `< 2` points → the §6.8 `collecting` text at 32px), `ariaLabel="Compass headline, last 365 days"`. The 20/40/60/80 band lines are not drawn on the sparkline; the deltas carry the direction.
+
+**Lens tiles** (7): native `<details class="vx-tile">`; the `<summary>` is the 44px row, the expanded body is the inputs table. Order is the API order; forward lenses first, then a 24px divider row with `label` text `STANDALONE · NOT IN HEADLINE` and a 1px `--border-subtle` rule, then the three standalone tiles.
+
+Summary row anatomy (grid `1fr auto auto`, gap 12, items baseline):
+```
+Capital Flows            31  Light          7d +4 · 30d −12
+[▮▮░░░]
+```
+- Name `body` `--ink-100`. Score `figure` coloured `--band-{idx}` for forward lenses, `--ink-100` for standalone. Band word `figure-sm` `--ink-200`. Deltas `figure-sm` `--ink-300`, signed integers.
+- Track: five 4px-tall segments with 2px gaps, radius 2, filled up to the band index in the tile's colour (`--band-{idx}` forward, `--ink-300` standalone), empty segments `--surface-300`.
+- Null score: `—`, band word `insufficient history` in `--ink-300`, empty track, deltas `—`. The tile still expands.
+- Hover `--surface-200` on the summary; the native disclosure marker is hidden and replaced by a `▸`/`▾` glyph in `--ink-300` at the right edge.
+
+Expanded body: a real `<table>` (`figure-sm`): `input | value | pct | as of`. `value` via `fmtRaw` (14.6), `pct` as `p{int}` (`—` if null), `as of` `fmtDate`. Inputs whose `asOf` is older than the lens' freshest input by > 7 days get the `as of` cell in `--warning` (text stays; colour is secondary).
+
+#### 14.4.5 `LevelsTable`
+
+Props: `levels: Vector["levels"]`, `price: number | null` (from `overview.price`).
+
+Region header: `Key levels · cost-basis map`. A real `<table>` in `figure`, columns:
+
+| Metric (left, flex) | Level (right, 10ch) | Distance (right, 8ch) | Status (10ch) |
+|---|---|---|---|
+| `True Market Mean` | `77,200` | `−7.7%` | `● holding` |
+| `ETF cost basis ~` | `86,000` | `+2.8%` | `● lost` |
+
+- Rows sorted by `value` descending, so the table reads as a price ladder. A **divider row** is inserted where `price` falls: a single cell spanning all columns, 1px `--border-strong` rule with centred text `price 83,675` in `figure-sm` `--ink-200`. Omitted if `price` is null.
+- `proxy: true` → metric name followed by ` ~` in `--ink-300` and `title="proxy: flow-weighted ETF cost basis, inflows only"`.
+- Status pill (§3.5 shape): `holding` `--positive` on `--positive-subtle`; `lost` `--negative` on `--negative-subtle`; `contested` `--warning` on `--warning-subtle`. The word is always printed. Status is literal (price above / below / crossed recently), so a resistance above price reads `lost`; that is intended and matches SPEC 4.3.
+- Null `value` → `—` in Level and Distance, status cell `—`. Fewer than 5 non-null levels → a footer line `figure-sm` `--ink-300`: `{n} of {total} levels available`.
+- Below 900 the Distance column is removed and the distance is printed under the level inside the Level cell.
+
+#### 14.4.6 `MacroStrip`
+
+Props: `macro: Vector["macro"]`.
+
+A span-12 `section.region` with no header; body is a flex row (wraps to 3+3 at 1024, two-column `<dl>` below 900), 56px tall, cells separated by 1px `--border-subtle`. Each cell: eyebrow `label` `--ink-300`, then value `figure` `--ink-100`. Right-most cell: `as of {fmtDate(macro.asOf)}` in `figure-sm` `--ink-300`.
+
+| Eyebrow | Field | Format |
+|---|---|---|
+| `DOLLAR VS 200D` | `dollarVs200d` | `fmtPercentSigned`, 1dp |
+| `US 10Y` | `us10y` | `fmtYield` (2dp, `%`) |
+| `US 2Y` | `us2y` | `fmtYield` |
+| `FED FUNDS` | `fedFundsUpper` | `fmtYield` |
+| `CURVE 10Y−2Y` | `curve` | signed, 2dp, no `%` |
+| `BTC·SPX CORR 30D` | `spxCorr30d` | signed, 2dp |
+
+No colour by sign anywhere in the strip; macro is context, not a verdict.
+
+#### 14.4.7 `Brief`
+
+Props: `brief: Vector["brief"]`, `wocPhase: string`.
+
+Region header: `Brief · {wocPhase}` (e.g. `Brief · strong uptrend`, lowercase, underscores to spaces). Body: an `<ol>` with one `<li>` per sentence in `brief.sentences` (4–6). Each item: the number in `figure-sm` `--ink-300` in a 24px column, the sentence in `body` `--ink-200`, `max-width: 72ch`, 8px between items. No bullets, no bold. Confirm / invalidate are **not** repeated here (they live in the hero). Empty `sentences` → `no brief — the model has not produced a reading yet`.
+
+#### 14.4.8 `SourcesFooter`
+
+Props: `sources: Vector["sources"]`, `now: number`.
+
+A span-12 `<details class="vx-sources">`, 32px summary in `figure-sm` `--ink-300`: `▸ sources · {ok} ok · {failing} failing` (`failing` omitted when 0). Expanded: a `<table>` `source | last ok | error` in `figure-sm`; `last ok` as relative age (`fmtAge`), `error` is `lastError` text in `--ink-200` or `—`. Each row starts with a status dot and word: `● ok` (`--positive`) when `lastError` is null, `● failing` (`--negative`) otherwise. Nothing else on the page changes colour because of a failing source; the hero's `stale` pill already carries that consequence.
+
+#### 14.4.9 `VectorView` (composition)
+
+Props: `vector: Vector | null`, `error: boolean`, `onRetry()`, `overview: Overview | null`. Renders the five regions, the sources footer and the Drill-down divider into `.app-grid` using `span-5/7/8/4/12` (add `.span-8` and `.span-4` to `theme.css`). Owns no state beyond passing props. Range preset, levels toggle and tile open/closed state are local to RegimeChart and the `<details>` elements; none persist (§13).
+
+### 14.5 Interaction, state transitions, accessibility
+
+- **Data flow.** `useDashboardData` fetches `/api/vector` alongside `/api/overview` on first load and whenever `health.lastRefresh` changes; it exposes `vector`, `vectorError`, `retryVector`. The payload changes once a day; no separate polling.
+- **Loading.** Every Vector region renders its header and a flat `--surface-200` block: hero/gauges 210, chart 420, compass 420, levels 260, brief 160, macro 56. The chart instance is created immediately (§7).
+- **Error.** All five regions show `failed to load — retry` with the shared `retryVector`; the drill-down below is unaffected (§7 partial state).
+- **Stale.** `vector.stale` → hero pill + warning top border on the hero/gauge region only. `status === "stale"` from health keeps its existing effects (StatusBar pill, MarketRead border); the two are independent signals and both may show.
+- **Null regime / null headline / null lens.** Each prints `—` plus its text reason (`insufficient history`), never an empty cell. The chart still draws price; null-state points are `--ink-300`.
+- **Chart.** Presets, levels toggle, double-click reset as 14.4.3. No crosshair sync with the main chart (different purpose, §13).
+- **Tiles.** Native `<details>`; keyboard: Tab to the summary, Enter/Space toggles. Multiple tiles may be open.
+- **Focus order** follows the visual order: StatusBar controls → hero (no focusable elements) → chart controls → tiles → sources summary → drill-down.
+- **A11y.** Colour is never the sole encoding: regime word, zone words, band words, status words, flip words are always printed. Gauges and the allocation bar are `role="meter"` with `aria-valuetext`. Tables are real tables. The chart and the sparkline have `aria-label`s. All new text colours meet 4.5:1 on their surfaces (14.3.1, §10); zone arcs at 40% opacity are decorative and marked so by the surrounding text. No motion.
+
+### 14.6 Number formats (extends §5, in `format.ts`)
+
+| Kind | Rule | Example |
+|---|---|---|
+| Compass score, gauge 0–100 values, percentile | integer, unsigned | `23` · `p62` |
+| Compass delta (d7, d30) | `fmtDeltaPts`: signed integer, no unit | `+4` · `−12` · `0` |
+| Momentum | signed integer | `+42` · `−72` |
+| Risk (gauge) | `riskOff × 100`, integer | `33` |
+| Flows, dollar vs 200d, level distance | `fmtPercentSigned`, 1dp | `+2.4%` · `−7.7%` |
+| Yields, Fed funds | `fmtYield`: 2dp with `%` | `5.29%` |
+| Curve, correlation | signed 2dp, no unit | `+0.40` · `−0.12` |
+| Allocation | integer `%` | `66% BTC` |
+| Day count | `day N` | `day 41` |
+| Flip index | circled digit ①–⑳ in UI text; plain digit inside chart markers | `③` |
+| Raw lens input (`fmtRaw`) | ≤ 4 significant digits, thousands separator above 1,000, trailing zeros trimmed | `1.561` · `83,675` · `0.0025` |
+| Dates | as §5 (`YYYY-MM-DD` UTC) | |
+
+The minus sign stays U+2212. Null stays `—`.
+
+### 14.7 File layout additions and boundaries
+
+```
+frontend/src/
+  api.ts                          + Vector, RegimeState, Lens, Level types; fetchVector()
+  format.ts                       + fmtDeltaPts, fmtYield, fmtRaw, daysBetween
+  tokens.ts                       + REGIME_VAR, REGIME_TOKEN, REGIME_WORD, BAND_VAR
+  theme.css                       + --regime-*, --band-*, .t-figure-xl, .span-8, .span-4, .vx-* rules
+  useDashboardData.ts             + vector, vectorError, retryVector
+  App.tsx                         view toggle removed from body; <VectorView/> + divider above the drill-down
+  components/StatusBar.tsx        + view / onViewChange props, segmented in the right cluster
+  components/vector/VectorView.tsx
+  components/vector/RegimeHero.tsx
+  components/vector/Gauge.tsx
+  components/vector/RegimeChart.tsx
+  components/vector/CompassPanel.tsx   (LensTile is a local component in this file)
+  components/vector/LevelsTable.tsx
+  components/vector/MacroStrip.tsx
+  components/vector/Brief.tsx
+  components/vector/SourcesFooter.tsx
+  components/vector/scales.ts          gauge domains, zones and words (mirror of MODEL.md §8)
+```
+
+Where the implementer must not freelance:
+- No new fonts, no component library, no chart library beyond lightweight-charts, no CSS beyond `theme.css`.
+- No regime words other than those in 14.3.1; no `--accent` fills inside the Vector block.
+- The D7 table (14.4.1) and the gauge zones (14.4.2) are complete as written; do not add rows.
+- Do not compute model values in the UI (no client-side percentiles, no re-deriving `riskOff`, no inventing levels). If a number is not in the payload it prints `—` and is listed in 14.8.
+- Existing components (§6) are not modified by this phase except StatusBar's two new props and the App shell.
+- Reuse `Sparkline` (§6.9) for the Compass headline; do not write a second sparkline.
+
+### 14.8 API gaps (Phase 4)
+
+Asks for the backend, with the UI fallback until each exists. Field names follow SPEC 4.4.
+
+1. **Gauge domains.** `gauges.flows` is a raw percent with no bounds, so the arc has no fixed geometry. Propose `gauges.<key>.scale: { min: number; max: number }` for all four gauges (risk `0/1`, momentum `−100/100`, fundamentals `0/100`, flows chosen by calibration). Fallback: `scales.ts` hardcodes flows at `−10…+10 %` clamped, and the gauge marks clipped values with `›`/`‹`.
+2. **Units.** Confirm: `regime.allocation` is an integer percent (`66`), `levels[].distancePct` is in percent (`−7.7`) with positive meaning the level is **above** price, `macro.dollarVs200d` is a fraction (`0.018`) like the §12 #2 ratios, `macro.us10y/us2y/fedFundsUpper/curve` are in percent points as FRED publishes them (`5.29`), `spxCorr30d` is in `[−1, 1]`. Design assumes exactly these.
+3. **Timestamps.** Confirm `asOf`, `oldestInputAsOf`, `regime.since`, `compass.lenses[].inputs[].asOf`, `macro.asOf`, `sources.*.lastOk` are ISO date strings, and `flips[].t`, `history[].t`, `compass.history[].t` are epoch milliseconds like every other `t` in the API. Design assumes this split; the UI will not parse two formats for one field.
+4. **Lens input units.** `compass.lenses[].inputs[].value` has no unit hint, so the expanded tile prints a generic `fmtRaw` number. Propose `inputs[].unit: "usd" | "ratio" | "pct" | "btc" | "count" | "index"` so the table can format each row properly. Not blocking.
+5. **D7 note from the backend (nice-to-have).** The disagreement rule in 14.4.1 is model logic living in the UI. Propose `regime.htfNote: string | null` produced server-side from the same table; when present the UI prints it verbatim and the client table is deleted.
+6. **Flip count.** `flips` is unbounded over full history; the UI lists the last four and uses chart markers for all. If history ever exceeds ~40 flips the marker numbers lose meaning; cap is a MODEL.md question (≤ 4 per year is already a calibration target), not a UI one.
+
+### 14.9 Addendum (post-review, planner decision)
+
+- **Stress-condition checklist (RegimeHero).** The checklist goes below the confirm/invalidate rows, as a native `<details>` closed by default. Summary line in `label` style: `stress conditions · {k} of 6 active`; `k` takes the `--regime-strong-off` colour when > 0, `--ink-300` otherwise. The open list has one row per `regime.conditions[]` item, in four columns: an on/off pill (`active` uses the strong-off colour, `clear` uses `--ink-300`; the text label is always present), the `label`, `value` in mono via `fmtRaw`, and the `asOf` date. Row height 24px, no extra region. At <900 the `asOf` column is dropped. This is the Vector "zero risk-off signals" readout, so it does not repeat the brief.
+- **Gauge words for fundamentals and flows** use the band name of the matching lens (On-chain Fundamentals / Capital Flows), so the gauge and the Compass tile never disagree. Risk and momentum keep their `scales.ts` words.
+- **Flip markers:** every flip gets a marker. Only the last four carry numbers, and those numbers match the flip list under the chart. Older flips show an unnumbered dot.
+- **Staleness:** the hero shows the stale pill when `vector.stale` is true **or** when `now − asOf > 3 days`, because the static export freezes `stale` at export time.

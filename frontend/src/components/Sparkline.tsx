@@ -3,19 +3,21 @@ import { fmtApr } from "../format";
 
 const WIDTH = 200;
 const MARKER_GUTTER = 16;
-const GAP_MS = 7_200_000; // 2h — breaks the line rather than drawing a fake straight join
 
 export function Sparkline({
   points,
   height = 48,
   zeroLine = false,
   markers = [],
+  maxGapMs = 7_200_000,
   ariaLabel,
 }: {
   points: [number, number][];
   height?: number;
   zeroLine?: boolean;
   markers?: { label: string; value: number }[];
+  /** Gaps longer than this break the line rather than drawing a fake straight join (default 2h). */
+  maxGapMs?: number;
   ariaLabel: string;
 }) {
   const plotW = WIDTH - MARKER_GUTTER;
@@ -46,13 +48,13 @@ export function Sparkline({
   }
   const toY = (v: number): number => height - ((v - min) / (max - min)) * height;
 
-  // Break the path into segments wherever the gap between consecutive points exceeds GAP_MS.
+  // Break the path into segments wherever the gap between consecutive points exceeds maxGapMs.
   const segments: [number, number][][] = [];
   let current: [number, number][] = [points[0]!];
   for (let i = 1; i < points.length; i++) {
     const [t] = points[i]!;
     const [prevT] = points[i - 1]!;
-    if (t - prevT > GAP_MS) {
+    if (t - prevT > maxGapMs) {
       segments.push(current);
       current = [];
     }

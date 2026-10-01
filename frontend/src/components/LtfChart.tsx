@@ -10,15 +10,7 @@ import {
 } from "lightweight-charts";
 import type { Frame, LtfInterval, LtfPoint } from "../api";
 import { fmtDate, fmtTimestamp, fmtPrice, fmtApr, fmtBp, fmtCompactUsd, fmtScore, fmtPercentSigned } from "../format";
-import { STATE_VAR } from "../tokens";
-
-function alpha(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
-function css(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
+import { alpha, css, STATE_VAR } from "../tokens";
 
 const PRICE_H = 300;
 const FUNDING_H = 110;

@@ -1,8 +1,6 @@
 // HTF (daily) model. Pure functions only. See docs/MODEL.md section 1.
 import type { Candle } from "../types";
-import { clamp, sma, roc, realizedVol, percentileRank, commitWithHysteresis } from "./indicators";
-
-const DAY_MS = 86_400_000;
+import { clamp, sma, roc, realizedVol, percentileRank, commitWithHysteresis, DAY as DAY_MS } from "./indicators";
 
 export type HtfPhase =
   | "accumulation"

@@ -10,6 +10,7 @@ import { LtfChart } from "./components/LtfChart";
 import { SignalTable } from "./components/SignalTable";
 import { PhaseGuide } from "./components/PhaseGuide";
 import { AssetsView } from "./components/AssetsView";
+import { VectorView } from "./components/vector/VectorView";
 
 function App() {
   const [view, setView] = useState<"btc" | "assets">("btc");
@@ -38,6 +39,9 @@ function App() {
     retryHtf,
     retryLtf,
     retrySignals,
+    vector,
+    vectorError,
+    retryVector,
   } = useDashboardData(htfInterval, ltfInterval);
 
   const vectorPoints: VectorPoint[] = useMemo(() => {
@@ -49,7 +53,7 @@ function App() {
   if (status === "loading" && !overview) {
     return (
       <div>
-        <StatusBar health={health} overview={overview} status={status} onOpenGuide={() => setGuideOpen(true)} />
+        <StatusBar health={health} overview={overview} status={status} onOpenGuide={() => setGuideOpen(true)} view={view} onViewChange={setView} />
         <div className="app">
           <div className="region-loading">loading…</div>
         </div>
@@ -60,7 +64,7 @@ function App() {
   if (status === "error" && !overview) {
     return (
       <div>
-        <StatusBar health={health} overview={overview} status={status} onOpenGuide={() => setGuideOpen(true)} />
+        <StatusBar health={health} overview={overview} status={status} onOpenGuide={() => setGuideOpen(true)} view={view} onViewChange={setView} />
         <div className="app">
           <div className="region-error">backend unreachable at :8787 — run bun run dev</div>
         </div>
@@ -70,18 +74,13 @@ function App() {
 
   return (
     <div>
-      <StatusBar health={health} overview={overview} status={status} onOpenGuide={() => setGuideOpen(true)} />
+      <StatusBar health={health} overview={overview} status={status} onOpenGuide={() => setGuideOpen(true)} view={view} onViewChange={setView} />
       <div className="app">
-        <span className="segmented">
-          {(["btc", "assets"] as const).map((v) => (
-            <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>
-              {v === "btc" ? "BTC" : "Assets"}
-            </button>
-          ))}
-        </span>
         {view === "assets" && <AssetsView />}
         {view === "btc" && (
         <div className="app-grid">
+          <VectorView vector={vector} error={vectorError} onRetry={retryVector} overview={overview} />
+
           <section className="region span-7">
             <div className="region-header">
               <span>Market read</span>

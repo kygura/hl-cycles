@@ -7,11 +7,15 @@ export function StatusBar({
   overview,
   status,
   onOpenGuide,
+  view,
+  onViewChange,
 }: {
   health: Health | null;
   overview: Overview | null;
   status: Status;
   onOpenGuide: () => void;
+  view: "btc" | "assets";
+  onViewChange: (v: "btc" | "assets") => void;
 }) {
   // DESIGN.md §6.1/§7: health.lastRefresh is the one source for age/staleness
   // (health is polled alongside overview) — not overview.lastRefresh.
@@ -39,7 +43,7 @@ export function StatusBar({
       <div className="left">
         <span className="wordmark">hl-cycles · BTC</span>
         {overview && <span className="price mono">{fmtPriceUsd(overview.price)}</span>}
-        {overview && <span>· as of {fmtTimestamp(overview.asOf)} UTC</span>}
+        {overview && <span className="asof">· as of {fmtTimestamp(overview.asOf)} UTC</span>}
         <span className="pill mono" style={{ color }}>
           {pillText}
         </span>
@@ -49,9 +53,18 @@ export function StatusBar({
           </span>
         )}
       </div>
-      <button className="guide-btn" onClick={onOpenGuide} aria-haspopup="dialog">
-        ? Phase guide
-      </button>
+      <div className="right">
+        <span className="segmented" role="tablist" aria-label="View">
+          {(["btc", "assets"] as const).map((v) => (
+            <button key={v} role="tab" aria-selected={view === v} onClick={() => onViewChange(v)}>
+              {v === "btc" ? "BTC" : "Assets"}
+            </button>
+          ))}
+        </span>
+        <button className="guide-btn" onClick={onOpenGuide} aria-haspopup="dialog" aria-label="Phase guide">
+          ? <span className="guide-text">Phase guide</span>
+        </button>
+      </div>
     </div>
   );
 }

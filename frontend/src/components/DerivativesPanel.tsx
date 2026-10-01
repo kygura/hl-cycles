@@ -5,14 +5,13 @@
 // cover >= 80% of the window.
 import { useState } from "react";
 import type { Derivatives, Pt } from "../api";
-import { fmtApr, fmtBp, fmtCompactUsd, fmtDate, fmtPercentSigned } from "../format";
+import { DAY, fmtApr, fmtBp, fmtCompactUsd, fmtDate, fmtPercentSigned } from "../format";
 import { Sparkline } from "./Sparkline";
 
 type Win = "7d" | "30d" | "90d";
 const WINS: readonly Win[] = ["7d", "30d", "90d"];
-const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
-const WIN_MS: Record<Win, number> = { "7d": 7 * DAY_MS, "30d": 30 * DAY_MS, "90d": 90 * DAY_MS };
+const WIN_MS: Record<Win, number> = { "7d": 7 * DAY, "30d": 30 * DAY, "90d": 90 * DAY };
 const MIN_COVERAGE = 0.8;
 
 const since = (points: Pt[], now: number, ms: number): Pt[] => points.filter(([t]) => t > now - ms);
@@ -26,14 +25,14 @@ function coverage(points: Pt[], windowMs: number): number {
 function valueDayAgo(points: Pt[]): number | null {
   if (!points.length) return null;
   const tLast = points[points.length - 1]![0];
-  const then = points.filter(([t]) => t >= tLast - DAY_MS - HOUR_MS && t <= tLast - DAY_MS).pop();
+  const then = points.filter(([t]) => t >= tLast - DAY - HOUR_MS && t <= tLast - DAY).pop();
   return then ? then[1] : null;
 }
 
 /** Percentile rank of the last value within the trailing 30d, as "p42", when coverage allows. */
 function pct30d(points: Pt[], now: number): string {
-  const win = since(points, now, 30 * DAY_MS);
-  if (win.length < 2 || coverage(win, 30 * DAY_MS) < MIN_COVERAGE) return "—";
+  const win = since(points, now, 30 * DAY);
+  if (win.length < 2 || coverage(win, 30 * DAY) < MIN_COVERAGE) return "—";
   const last = win[win.length - 1]![1];
   return `p${Math.round((win.filter(([, v]) => v <= last).length / win.length) * 100)}`;
 }
@@ -111,7 +110,7 @@ export function DerivativesPanel({ data, error, onRetry }: { data: Derivatives |
           </span>
         </span>
       </div>
-      <div className="region-body" style={{ padding: 0 }}>
+      <div className="region-body deriv-body" style={{ padding: 0 }}>
         {error ? (
           <div className="region-error">
             failed to load — retry

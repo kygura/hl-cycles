@@ -122,7 +122,8 @@ export function CycleVector({
               position: "absolute",
               left: `${(toX(current.trend) / SIZE) * 100}%`,
               top: `${(toY(current.heat) / SIZE) * 100}%`,
-              transform: "translate(10px, -8px)",
+              // Flip the label to the left near the right edge so it is not clipped.
+              transform: current.trend > 0.4 ? "translate(calc(-100% - 10px), -8px)" : "translate(10px, -8px)",
               fontSize: "12px",
               color: "var(--ink-100)",
               whiteSpace: "nowrap",

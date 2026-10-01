@@ -10,20 +10,8 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { FRAMES, type Frame, type HtfPhase, type HtfPoint } from "../api";
-import { fmtDate, fmtPrice, fmtUnsigned2, fmtPercentSigned, fmtScore } from "../format";
-import { PHASE_TOKEN, PHASE_VAR } from "../tokens";
-
-function alpha(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-function css(varName: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-}
+import { DAY, fmtDate, fmtPrice, fmtUnsigned2, fmtPercentSigned, fmtScore } from "../format";
+import { alpha, css, PHASE_TOKEN, PHASE_VAR } from "../tokens";
 
 export function HtfChart({
   data,
@@ -52,7 +40,7 @@ export function HtfChart({
         horzLines: { color: alpha(css("--border-subtle") || "#212328", 0.6) },
       },
       crosshair: { mode: 0 },
-      rightPriceScale: { mode: 1, borderColor: css("--border-subtle") },
+      rightPriceScale: { mode: 1, borderColor: css("--border-subtle"), entireTextOnly: true },
       // minBarSpacing default (0.5px) blocks fitContent() from showing full
       // history once there are more daily bars than px available (5000+ bars
       // since 2011 vs. ~1400px container) — it clamps to whatever fits at
@@ -151,7 +139,7 @@ export function HtfChart({
         halvings
           .filter((h) => h >= (data[0]?.t ?? 0) && h <= (data[data.length - 1]?.t ?? Infinity))
           .map((h) => ({
-            time: (Math.floor(h / 86_400_000) * 86_400) as UTCTimestamp,
+            time: (Math.floor(h / DAY) * 86_400) as UTCTimestamp,
             position: "belowBar" as const,
             shape: "arrowUp" as const,
             color: css("--ink-200"),

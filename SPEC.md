@@ -404,3 +404,151 @@ Size: 4 series × ≤ 169 points × about 30 B is about 20 KB. Do not round the 
 2. Frontend restyle (3b.1). Visually check that the HTF chart is unchanged apart from colour.
 3. MarketRead, Sparkline, DerivativesPanel and App wiring.
 4. Out of scope for this phase: a light theme, a sparkline tooltip or hover, per-window API params, alt derivatives panels, and more venues. Add them when they are asked for.
+
+## Phase 4: Vector long-term view (Glassnode "Bitcoin Vector"-style, open data)
+
+Research basis: `docs/research/bitcoin-vector.md` (metric catalogue, inferred signal logic, endpoint log). The Vector product itself is paywalled; this phase rebuilds its two layers from open data:
+
+- **Compass (the map):** seven percentile-ranked lenses, scored 0–100, after Glassnode's Market Compass.
+- **Vector regime (the act layer):** a daily four-state Risk-On/Risk-Off call with a BTC/cash allocation hint and dated flips.
+
+The Vector view becomes the landing page. The existing MarketRead, derivatives panel, main chart and signal table stay below it as the drill-down. HTF phases stay; they are no longer the headline.
+
+### 4.1 Decisions (binding)
+
+| # | Decision |
+|---|---|
+| D1 | Dollar = FRED `DTWEXBGS` (broad trade-weighted, keyless CSV), compared against its own 200-day average. Published weekly, so treat the last value as current. Do not carry over the DXY-level threshold (`DXY > 99`), because the scales differ. |
+| D2 | ETF flows: primary source is keyless `bitcoin-data.com/v1/etf-flow-btc` (daily net flow in BTC, from 2024-01-11). Optional fallback/cross-check is SoSoValue behind `SOSOVALUE_API_KEY`; skip it when unset. **Deferred (not built)**, see 4.8. |
+| D3 | All new sources are fetched only in the daily `--backfill` cron run. The first run pulls full history; later runs re-fetch and overwrite the trailing 14 days, because bitcoin-data marks its last 7 days `delayed`. Keyless bitcoin-data allows 10 req/h: use at most 8 endpoints per run, one history call each. Optional `BGEOMETRICS_TOKEN` raises the limit. Optional `FRED_API_KEY` switches FRED to the JSON API; the keyless CSV is the default. |
+| D4 | Compass inputs are percentile-ranked against a rolling 4-year window. Inputs with shorter history use an expanding window with a 365-day minimum and are null before that. A lens is the mean of its non-null inputs and is null if fewer than half its inputs are present. Headline = mean of the four forward lenses. Bands are at 20/40/60/80. Every input has an explicit polarity in one table in MODEL.md. |
+| D5 | The Vector regime uses a fixed condition set. A missing input carries its last value forward for up to 10 days, then counts as "not stressed" and marks the regime `stale`. Never renormalize the stress share. Before 2024-01-11, ETF counts as not stressed. A new state commits only after holding 3 consecutive daily closes. |
+| D6 | Out of scope: cost-basis distribution walls, liquidation heatmap, dealer gamma, order-book walls, the 45-indicator cycle board. In scope: Deribit DVOL history plus a daily 25-delta skew snapshot appended to its own file, so a skew history builds up over time. |
+| D7 | Vector regime = headline; HTF phase = drill-down. The UI shows a one-line note when they disagree (e.g. Vector Risk-On while the HTF phase reads distribution). |
+| D8 | Per-input staleness: every input carries its last observation date. The overview JSON shows the oldest input's as-of date next to the regime label. |
+
+### 4.2 New sources (each its own adapter in `backend/src/sources/`, injected fetch seam, finite-number parsing, independent failure)
+
+| Adapter | Endpoint | Series (daily) | Key |
+|---|---|---|---|
+| `coinmetrics.ts` | `community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&frequency=1d` (paginate `next_page_token`) | `CapMrktCurUSD, CapMVRVCur, SplyCur, AdrActCnt, TxCnt, FeeTotNtv, HashRate, SplyExNtv, FlowInExNtv` (`next_page_url` followed only back to the same API base). Derived: realized cap = mcap / MVRV; realized price = realized cap / supply | none |
+| `bgeometrics.ts` | `bitcoin-data.com/v1/<metric>` (full history) | `sth-realized-price`, `true-market-mean`, `lth-realized-price`, `sth-sopr`, `nupl`, `supply-profit`, `etf-flow-btc` (7 calls) | optional `BGEOMETRICS_TOKEN` |
+| `fred.ts` | `fred.stlouisfed.org/graph/fredgraph.csv?id=<id>` (retry once on timeout) | `DTWEXBGS, DGS10, DGS2, DFEDTARU, SP500, T10Y2Y` | optional `FRED_API_KEY` |
+| `defillama.ts` | `stablecoins.llama.fi/stablecoincharts/all` | total stablecoin mcap (USD) | none |
+| `deribit.ts` | `www.deribit.com/api/v2/public/get_volatility_index_data` (DVOL, resolution 1D) + `get_book_summary_by_currency?currency=BTC&kind=option` | DVOL daily history; daily 25Δ skew (~30d tenor, interpolated) + put/call OI ratio snapshot | none |
+| `feargreed.ts` | `api.alternative.me/fng/?limit=0` | Fear & Greed daily | none |
+
+Storage follows the existing JSON pattern: `data/onchain-cm.json`, `data/onchain-bg.json` (one object keyed by series), `data/macro-fred.json`, `data/stables.json`, `data/dvol.json`, `data/options-skew.json` (append-only daily snapshots), `data/feargreed.json`. Each file keeps `{ series: { <name>: [{t, v}] }, fetchedAt }` or the row equivalent. Rows are deduplicated by day, and a re-fetch overwrites rows that overlap.
+
+A failure in one source must not fail the cron run (do not count it in `shouldFail`). It leaves the last-good file in place and records the error under `state.json` `vectorSources[<name>] = {lastOk, lastError}`. Exception (alerting, 4.8): a source with no success in over 3 days (or never) does fail the daily run.
+
+### 4.3 Model (`backend/src/model/compass.ts`, `backend/src/model/vector.ts`, pure functions; constants and calibration in `docs/MODEL.md` §8)
+
+All outputs are daily series from the first day with enough inputs, so the UI can show history, 7d/30d deltas and flips.
+
+**Compass lenses** (candidate inputs, finalised in MODEL.md with polarity):
+- Macro (Tightening → Expansionary): dollar vs 200DMA (−), 10Y 90d change (−), 10Y−2Y curve (+), 2Y − Fed funds upper (−), BTC vs S&P 500 30d relative strength (+).
+- Capital Flows (Drained → Flush): stablecoin mcap 30d RoC (+), realized cap 30d % change (+), ETF net flow 30d sum (+), exchange supply 30d change (−).
+- Investor Behaviour (Distributing → Accumulating): STH-SOPR 30d mean (+), price / STH cost basis (+), exchange inflow 30d vs 365d (−), Fear & Greed (contrarian, decided in MODEL.md).
+- On-chain Fundamentals (Contracting → Hot): active addresses 30d/365d (+), tx count 30d/365d (+), fees in BTC 30d/365d (+), hashrate 30d/365d (+).
+- Cycle Position (Capitulation → Euphoria; standalone): MVRV (+), NUPL (+), percent supply in profit (+), price / realized price (+), existing HTF heat (+).
+- Derivatives (Deleveraged → Frothy; standalone): funding APR (+), OI / market cap (+), DVOL (+), 25Δ skew (−, calls bid = froth), HL premium (+).
+- Rotation (BTC Season → Altseason; standalone): share of alts in the HL universe beating BTC over 30d, share of alts with funding above neutral.
+
+Each lens has 5 named bands (lowest → highest), per `docs/research/bitcoin-vector.md` §1.4. Headline bands: Risk-Off, Defensive, Neutral, Constructive, Risk-On.
+
+**Vector regime:**
+- `riskOff` in [0,1] = share of a fixed stress-condition set that is true: price < STH cost basis; STH-SOPR 7d mean < 1; price < True Market Mean; 30d downside semivolatility > its own 365d median; stablecoin 30d RoC < 0; ETF 7d net flow < 0.
+- `momentum` in [−100, 100] = blend of 20/50/200d ROC (exact formula in MODEL.md).
+- `flows` = realized cap 30d % change (sign is what matters).
+- Raw state: `strong_risk_on` if riskOff = 0 and momentum > 0 and flows > 0; `mild_risk_on` if riskOff ≤ 0.25 and momentum > 0; `strong_risk_off` if riskOff ≥ 0.5 and momentum < 0; otherwise `mild_risk_off`. MODEL.md may move these thresholds during calibration, but must keep the structure.
+- Allocation hint: 100 / 66 / 33 / 0 % BTC for the four states.
+- Calibration targets (sanity, not hard gates): flips within ±30 days of 2024-09-22 (on), 2025-10-12 (off) and 2026-08-21 (on); ≤ 4 flips per calendar year; 2022 mostly risk-off. Report hit/miss in MODEL.md.
+
+**Key levels map:** STH cost basis, True Market Mean, Realized Price, LTH realized price, Mean MVRV price (realized price × long-run mean MVRV), SMA200, ETF cost basis (flow-weighted average of daily close × daily inflow, inflows only; marked proxy). Each level carries its value, distance from price in %, and a status:
+- `holding`: price above for ≥ 2 closes.
+- `lost`: price below for ≥ 2 closes.
+- `contested`: crossed within the last 2 closes.
+
+**Phase rule (WoC):** `strong_uptrend` if price > TMM and price > STH-CB; `capitulation` if price < both and STH-CB < TMM; `bear` if price < both; otherwise `transition`.
+
+**Brief:** 4–6 deterministic sentences in Glassnode's style (claim, value vs history, falsifiable trigger), generated from templates. Example: "Price holds above the short-term holder cost basis ($73.3K) for 12 sessions; a daily close below it would end the stretch." Plus confirm and invalidate lines built from the nearest level above and below.
+
+### 4.4 API and export
+
+`GET /api/vector` → `vector.json`:
+```
+{ asOf, oldestInputAsOf, stale,
+  regime: { state, since, allocation, riskOff, momentum, flows, conditions: [{key, label, on, value, asOf}] },
+  flips: [{ t, from, to, price }],
+  history: [{ t, price, state, riskOff, momentum }],          // daily, full range
+  compass: { headline: {score, band, d7, d30}, lenses: [{key, label, score, band, d7, d30, standalone, inputs: [{key, label, value, pct, asOf}]}], history: [{t, headline, macro, flows, behaviour, fundamentals, cycle, derivatives, rotation}] },
+  levels: [{ key, label, value, distancePct, status, proxy }],
+  wocPhase, brief: { sentences: [], confirm, invalidate },
+  gauges: { risk: {now, lastWeek, avg52w}, momentum: {...}, fundamentals: {...}, flows: {...} },
+  macro: { dollarVs200d, us10y, us2y, fedFundsUpper, curve, spxCorr30d, asOf },
+  sources: { <name>: { lastOk, lastError } } }
+```
+Add a route to `server.ts` and to the export `ROUTES`. Compute once per cache key; daily inputs change only once a day.
+
+### 4.5 Frontend
+
+The landing view is designed in `DESIGN.md` §14 (Vector). Its required content:
+- Regime hero: state word, allocation, days since flip, staleness/oldest-input note, and the D7 disagreement note.
+- Four gauges: risk, momentum, fundamentals, flows. Each shows today, last week and the 52-week average.
+- Regime-coloured long-horizon price chart: log scale, dot strip, flip callouts, key levels as lines.
+- Compass headline plus seven lens tiles: 0–100, band, 7d/30d deltas, expandable inputs.
+- Key levels table with Status.
+- Macro strip.
+- The brief.
+
+The existing components follow, unchanged.
+
+### 4.6 Done means (Phase 4)
+- `bun run test` passes. New tests cover:
+  - every adapter parser against fixtures;
+  - compass percentile/polarity/null-renormalisation;
+  - regime raw-state rules, 3-close hysteresis and carry-forward staleness;
+  - level status;
+  - the `/api/vector` shape;
+  - export writes `vector.json`.
+- `bun run build` passes clean, and `tsc --noEmit` passes on both packages.
+- `bun run cron -- --backfill` works locally with no keys set: it fetches the new sources, and a forced single-source failure leaves the run green.
+- `bun run export` writes `frontend/dist/api/vector.json` with non-null regime, compass headline and ≥ 5 levels.
+- The dev server renders the Vector view at 1440 and 390 widths with 0 console errors (puppeteer screenshot).
+- MODEL.md §8 documents formulas, polarity table, thresholds and the flip backtest result.
+- `collect.yml` passes the optional keys through as secrets.
+
+### 4.7 API amendments (resolved after the design pass, DESIGN.md §14.8; binding)
+
+1. **Gauges are bounded and normalized server-side.** Each gauge is `{now, lastWeek, avg52w, scale: {min, max}}`:
+   - `risk` = riskOff × 100, scale 0–100;
+   - `momentum` = −100..100;
+   - `fundamentals` = On-chain Fundamentals lens score, 0–100;
+   - `flows` = Capital Flows lens score, 0–100.
+
+   The raw `regime.flows` (realized cap 30d % change) is still exposed for the condition list.
+2. **Units:**
+   - `allocation` is % BTC, 0–100.
+   - `distancePct` = (price / level − 1) × 100, signed; positive means price is above the level.
+   - `dollarVs200d` = % above the dollar index's 200-day average, signed.
+   - `us10y`, `us2y`, `fedFundsUpper` and `curve` are in percent points (5.29 means 5.29%).
+   - `spxCorr30d` is in [−1, 1].
+   - Compass `score` is 0–100; `d7` and `d30` are point changes.
+3. **Timestamps** in `vector.json` are all epoch ms UTC: `t`, `asOf`, `oldestInputAsOf`, `since`, `lastOk`, and `inputs[].asOf`.
+4. **Lens inputs** carry `unit: "pct" | "ratio" | "usd" | "btc" | "index" | "count" | "z"`, used for formatting.
+5. **`regime.htfNote: string | null`:** server-side D7 disagreement sentence, using the table in DESIGN.md §14.4.1. The frontend renders it and never computes it.
+6. **`flips`** is the full list, oldest first. The UI shows the last four; the chart marks all of them.
+
+### 4.8 Implementation deviations
+
+Where the build differs from 4.1–4.7 (recorded after verification, 2026-10-01):
+
+- **D2:** the SoSoValue ETF fallback is deferred (not built); `etf-flow-btc` from bitcoin-data is the only ETF source and the workflow passes no `SOSOVALUE_API_KEY`.
+- **D3:** bitcoin-data, FRED and DefiLlama have no start parameter, so every daily run re-fetches their full history (one call per series) instead of the trailing 14 days; CoinMetrics, Deribit DVOL and Fear & Greed re-fetch from 14 days before their oldest series end. bitcoin-data is skipped when it already succeeded the same UTC day (15 req/day keyless cap; 7 calls per run). The whole refresh has one 8-minute deadline. A corrupt series file is moved to `<file>.corrupt-<ts>` and its full history re-fetched, except `options-skew.json` (snapshot-only history), which keeps throwing and is never discarded.
+- **Alerting:** a vector source whose `lastOk` is null or more than 3 days old fails the daily cron run (red job; data commit and deploy still run). A single failed day stays a warning.
+- **D8:** `oldestInputAsOf` lives in `vector.json` (next to the regime), not in the overview JSON.
+- **Regime start:** 2022-10-07, the first day every condition input exists; no proxies before bitcoin-data's 2022-10 history (MODEL §8.3).
+- **Flip** = committed state moves extreme ↔ extreme (`strong_risk_on` ↔ `strong_risk_off`); mild states are steps, not flips.
+- **Rotation** breadth shares are scored as-is (already 0–100 cross-sections, 125-day retention), not time-percentiled.
+- **`regime.since`** = first day of the current committed state (not of the current risk-on/off side).

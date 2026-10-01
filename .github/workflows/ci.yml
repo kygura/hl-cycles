@@ -23,6 +23,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: No focused tests
+        run: |
+          if grep -rn "\.only(" backend/test; then
+            echo "::error::remove .only( from backend/test"
+            exit 1
+          fi
+
       - name: Test
         run: bun run test
 

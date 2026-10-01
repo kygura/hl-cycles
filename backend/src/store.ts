@@ -130,7 +130,13 @@ export async function saveAltOi(coin: string, rows: OiRow[]): Promise<void> {
 
 // Persisted refresh state (SPEC.md 3.1): lets a fresh process (Vercel build, no scheduler run)
 // know lastRefresh/lastError without ever calling refreshAll() itself.
-export type PersistedState = { lastRefresh: number | null; lastError: string | null };
+export type VectorSourceState = { lastOk: number | null; lastError: string | null };
+export type PersistedState = {
+  lastRefresh: number | null;
+  lastError: string | null;
+  // Phase 4 vector sources (SPEC.md 4.2), written only by the daily --backfill run.
+  vectorSources?: Record<string, VectorSourceState>;
+};
 
 function statePath(): string {
   return join(dataDir(), "state.json");
@@ -151,6 +157,42 @@ export async function loadState(): Promise<PersistedState | null> {
 
 export async function saveState(state: PersistedState): Promise<void> {
   await atomicWrite(statePath(), JSON.stringify(state));
+}
+
+// Phase 4 daily series files (SPEC.md 4.2): `{ series: { <name>: [{t, v}] }, fetchedAt }`.
+export type SeriesFile = { series: Record<string, { t: number; v: number }[]>; fetchedAt: number | null };
+
+export async function loadSeriesFile(name: string): Promise<SeriesFile> {
+  const path = join(dataDir(), name);
+  if (!existsSync(path)) return { series: {}, fetchedAt: null };
+  const raw = await readFile(path, "utf8");
+  if (!raw.trim()) return { series: {}, fetchedAt: null };
+  // Same reasoning as readJsonArray: corruption throws, so a merge never overwrites real history.
+  const parsed = JSON.parse(raw) as SeriesFile;
+  if (typeof parsed?.series !== "object" || parsed.series == null) throw new Error(`${path}: missing "series" object`);
+  for (const [k, rows] of Object.entries(parsed.series)) {
+    if (!Array.isArray(rows) || !rows.every((r) => Number.isFinite(r?.t) && Number.isFinite(r?.v))) throw new Error(`${path}: series "${k}" is not [{t, v}]`);
+  }
+  return parsed;
+}
+
+/** Moves a corrupt series file aside as `<name>.corrupt-<ts>` (kept for inspection, never read again). */
+export async function quarantineSeriesFile(name: string, ts: number): Promise<string> {
+  const to = `${name}.corrupt-${ts}`;
+  await rename(join(dataDir(), name), join(dataDir(), to));
+  return to;
+}
+
+export async function saveSeriesFile(name: string, file: SeriesFile): Promise<void> {
+  await atomicWrite(join(dataDir(), name), JSON.stringify(file));
+}
+
+// Per series, mergeByT with incoming winning: a re-fetch of the trailing window overwrites the
+// overlapping days, older days and series the fetch didn't return are kept as-is.
+export function mergeSeriesFile(existing: SeriesFile, incoming: SeriesFile["series"], fetchedAt: number): SeriesFile {
+  const series = { ...existing.series };
+  for (const [name, rows] of Object.entries(incoming)) series[name] = mergeByT(series[name] ?? [], rows);
+  return { series, fetchedAt };
 }
 
 function snapshotsPath(): string {

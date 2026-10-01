@@ -31,6 +31,9 @@ jobs:
       - name: Collect data
         id: cron
         continue-on-error: true
+        env:
+          BGEOMETRICS_TOKEN: ${{ secrets.BGEOMETRICS_TOKEN }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
           if [ "${{ github.event.schedule == '5 0 * * *' || github.event_name == 'workflow_dispatch' }}" = "true" ]; then
             bun run cron -- --backfill
@@ -107,7 +110,8 @@ jobs:
         with:
           path: frontend/dist
 
-      # Keeps the job (and its badge/notifications) red on a real collection failure, without
+      # Keeps the job (and its badge/notifications) red on a real collection failure (including a
+      # Phase 4 vector source with no successful fetch in over 3 days, see cronLogic.ts), without
       # blocking the deploy job below — that job checks export-ok directly rather than relying on
       # collect's overall pass/fail, since a partial cron failure (e.g. one source down) still
       # produces a valid, deployable export.

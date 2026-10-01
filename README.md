@@ -27,8 +27,9 @@ Data stored in `data/` as JSON, committed to the repo (this is how the deployed 
 - `bun run dev` — start backend + frontend
 - `bun test` — run backend test suite
 - `bun run build` — build frontend to `frontend/dist/`
-- `bun run cron` — one-shot headless collection (refresh + snapshot, persists `data/state.json`); add `-- --backfill` to also run the incremental daily backfill
-- `bun run export` — render `frontend/dist/api/*.json` from current data (no network calls) — this is what the Vercel build runs
+- `bun run cron` — one-shot headless collection (refresh + snapshot, persists `data/state.json`); add `-- --backfill` to also run the incremental daily backfill and refresh the Vector sources below
+- `cd backend && bun run vector-fetch` — refresh only the Vector sources (same code path as `--backfill`)
+- `bun run export` — render `frontend/dist/api/*.json` (including `vector.json`, the Vector regime + Compass payload) from current data (no network calls) — this is what the Vercel build runs
 
 ## Data sources
 
@@ -36,6 +37,26 @@ Data stored in `data/` as JSON, committed to the repo (this is how the deployed 
   Candles, funding rates, open interest; no rate limits enforced (fire at will, mutable universe)
 - **Bitstamp** (supplementary, keyless public API)  
   Daily OHLC from 2011 to 2022; removed once Hyperliquid history matures (optional adapter at `backend/src/sources/bitstamp.ts`)
+
+### Vector sources (Phase 4)
+
+Seven daily sources feed the Vector regime and Market Compass (`vector.json`, model in `docs/MODEL.md` §8). All are keyless; they are fetched only by the daily `cron -- --backfill` run (and `bun run vector-fetch`), each into its own `data/*.json`:
+
+| Source | File | What |
+|---|---|---|
+| CoinMetrics community API | `onchain-cm.json` | MVRV, supply, activity, fees, hashrate, exchange supply/inflow; derived realized cap/price |
+| bitcoin-data.com (BGeometrics) | `onchain-bg.json` | STH/LTH realized price, True Market Mean, STH-SOPR, NUPL, supply in profit, ETF net flow |
+| FRED | `macro-fred.json` | broad dollar, 10Y/2Y yields, Fed funds upper, 10Y−2Y, S&P 500 |
+| DefiLlama | `stables.json` | total stablecoin market cap |
+| Deribit DVOL | `dvol.json` | DVOL daily history |
+| Deribit options book | `options-skew.json` | daily 25Δ skew + put/call OI snapshot (history builds from day one, can't be backfilled) |
+| alternative.me | `feargreed.json` | Fear & Greed |
+
+Optional GitHub Actions secrets: `BGEOMETRICS_TOKEN` (raises the bitcoin-data limits) and `FRED_API_KEY` (switches FRED from the keyless CSV to the JSON API).
+
+bitcoin-data keyless limits are 10 requests/hour and 15/day. A run makes at most 7 calls (one per metric), stops early on a 429 or an exhausted hourly quota, and is skipped entirely when bitcoin-data already succeeded the same UTC day, so manual re-runs don't burn the daily cap.
+
+Each source fails independently: the last-good file is kept and the error recorded in `data/state.json` `vectorSources`. A one-day failure is a warning; a source with no successful fetch in **more than 3 days** fails the daily job (red run; data commit and deploy still go out).
 
 ## Deploy
 
@@ -67,7 +88,7 @@ Notes:
 - Locally, `bun run cron` runs a single collection pass (useful for testing without waiting for the schedule). `bun run dev` is unaffected by any of this.
 - Vercel would otherwise build on every push from `collect.yml` (96/day at a 15-minute cadence) plus human pushes, which risks the Hobby plan's 100 deploys/day limit. `collect.yml` appends ` [vercel-skip]` to the data commit's subject on odd `github.run_number` runs (the daily/backfill run never skips); `vercel.json`'s `ignoreCommand` skips the Vercel build (exit 0) when the last commit subject contains that marker, and always builds (exit 1) otherwise, including every human push — thinning the automated pushes down to roughly every 30 minutes.
 - If a build log shows `--frozen-lockfile` rejecting the committed lockfile version, drop `--frozen-lockfile` from `installCommand` in `vercel.json` rather than pinning Bun by hand.
-- **No staleness alerting.** Nothing pages you if the schedule silently stops firing (rate limits, a broken run, the vars above going missing). Check `/api/health.json` on either deployed site for `lastRefresh`/`lastSnapshot` manually if the dashboard looks stale.
+- **Limited staleness alerting.** Only the Vector sources alert (a red daily run when one is >3 days stale). Nothing pages you if the schedule silently stops firing (rate limits, a broken run, the vars above going missing). Check `/api/health.json` on either deployed site for `lastRefresh`/`lastSnapshot` manually if the dashboard looks stale.
 
 ## Documentation
 

@@ -6,7 +6,7 @@
 // and must not be re-fetched every 60s. Only /api/overview, /api/health (small)
 // and /api/signals are polled.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Derivatives, type Health, type HtfInterval, type HtfResponse, type LtfInterval, type LtfResponse, type Overview, type Signal } from "./api";
+import { api, type Derivatives, type Health, type HtfInterval, type HtfResponse, type LtfInterval, type LtfResponse, type Overview, type Signal, type Vector } from "./api";
 
 export type Status = "loading" | "ok" | "stale" | "error";
 
@@ -28,6 +28,9 @@ export function useDashboardData(htfInterval: HtfInterval, ltfInterval: LtfInter
   const [signalsError, setSignalsError] = useState(false);
   const [derivatives, setDerivatives] = useState<Derivatives | null>(null);
   const [derivativesError, setDerivativesError] = useState(false);
+
+  const [vector, setVector] = useState<Vector | null>(null);
+  const [vectorError, setVectorError] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const failedRef = useRef(false);
@@ -103,6 +106,17 @@ export function useDashboardData(htfInterval: HtfInterval, ltfInterval: LtfInter
     };
   }, [ltfInterval]);
 
+  // DESIGN.md §14.5: vector is daily data, so it is fetched once health first arrives and again
+  // only when health.lastRefresh changes — never on the poll tick.
+  const vectorKey = health == null ? undefined : health.lastRefresh ?? 0;
+  const loadVector = useCallback(() => {
+    setVectorError(false);
+    api.vector().then(setVector).catch(() => setVectorError(true));
+  }, []);
+  useEffect(() => {
+    if (vectorKey !== undefined) loadVector();
+  }, [vectorKey, loadVector]);
+
   // DESIGN.md §6.1/§7: staleness is derived from health.lastRefresh (health is
   // polled alongside overview), not overview.lastRefresh — one source. A null
   // health.lastRefresh (never refreshed) is not "stale", it's "not refreshed
@@ -128,6 +142,9 @@ export function useDashboardData(htfInterval: HtfInterval, ltfInterval: LtfInter
     signalsError,
     derivatives,
     derivativesError,
+    vector,
+    vectorError,
+    retryVector: loadVector,
     retryDerivatives: () => {
       setDerivativesError(false);
       api.derivatives().then(setDerivatives).catch(() => setDerivativesError(true));

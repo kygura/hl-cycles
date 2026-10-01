@@ -2,6 +2,9 @@
 
 const MINUS = "−";
 
+/** One day in ms. */
+export const DAY = 86_400_000;
+
 function sign(x: number): string {
   return x < 0 ? MINUS : "+";
 }
@@ -98,4 +101,39 @@ export function fmtRelativeAge(fromMs: number, nowMs: number = Date.now()): stri
 export function fmtRawOrDash(x: number | null | undefined, dp = 2): string {
   if (x == null || Number.isNaN(x)) return "—";
   return x.toFixed(dp);
+}
+
+// ---- Phase 4 Vector formats (DESIGN.md §14.6) ----
+
+/** Integer, unsigned (compass score, 0–100 gauge values). */
+export function fmtInt(x: number | null | undefined): string {
+  if (x == null || Number.isNaN(x)) return "—";
+  const v = Math.round(x);
+  return (v < 0 ? MINUS : "") + Math.abs(v);
+}
+
+/** Signed integer, no unit (compass d7/d30, momentum). Zero prints as `0`. */
+export function fmtDeltaPts(x: number | null | undefined): string {
+  if (x == null || Number.isNaN(x)) return "—";
+  const v = Math.round(x);
+  return v === 0 ? "0" : sign(v) + Math.abs(v);
+}
+
+/** Percent points (5.29 = 5.29%) -> `5.29%`. */
+export function fmtYield(x: number | null | undefined): string {
+  if (x == null || Number.isNaN(x)) return "—";
+  return (x < 0 ? MINUS : "") + Math.abs(x).toFixed(2) + "%";
+}
+
+/** Raw lens input: ≤ 4 significant digits, thousands separator above 1,000, trailing zeros trimmed. */
+export function fmtRaw(x: number | null | undefined): string {
+  if (x == null || Number.isNaN(x)) return "—";
+  const abs = Math.abs(x);
+  const body = abs >= 1000 ? Math.round(abs).toLocaleString("en-US") : String(Number(abs.toPrecision(4)));
+  return (x < 0 ? MINUS : "") + body;
+}
+
+/** Whole UTC days from `from` to `to` (day 0 on the same day). */
+export function daysBetween(from: number, to: number): number {
+  return Math.floor((to - from) / DAY);
 }

@@ -2,7 +2,7 @@ name: collect
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/30 * * * *"
     - cron: "5 0 * * *"
   workflow_dispatch: {}
 
@@ -20,6 +20,8 @@ jobs:
       export-ok: ${{ steps.export_check.outputs.exists }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -27,6 +29,17 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # Collected data lives on the `data` branch (Vercel doesn't deploy it, see vercel.json), so
+      # start each run from its latest data/ rather than whatever main last had synced.
+      - name: Restore data from data branch
+        run: |
+          if git fetch origin data; then
+            rm -rf data
+            git checkout FETCH_HEAD -- data
+          else
+            echo "restore: no data branch yet, using data/ from main"
+          fi
 
       - name: Collect data
         id: cron
@@ -46,49 +59,62 @@ jobs:
         env:
           DATA_AUTHOR_NAME: ${{ vars.DATA_AUTHOR_NAME }}
           DATA_AUTHOR_EMAIL: ${{ vars.DATA_AUTHOR_EMAIL }}
-          RUN_NUMBER: ${{ github.run_number }}
           IS_BACKFILL: ${{ github.event.schedule == '5 0 * * *' || github.event_name == 'workflow_dispatch' }}
         run: |
-          # Commits must be authored as the Hobby team owner (see vercel.json / SPEC.md 3.1) or
-          # Vercel won't deploy them on a private repo. Repo vars set to that identity; fall back
-          # to the bot identity (deploy just won't trigger) if the vars aren't set yet.
+          # Commits must be authored as the Hobby team owner (see SPEC.md 3.1) or Vercel won't
+          # deploy them on a private repo. Repo vars set to that identity; fall back to the bot
+          # identity (deploy just won't trigger) if the vars aren't set yet.
           git config user.name "${DATA_AUTHOR_NAME:-github-actions[bot]}"
           git config user.email "${DATA_AUTHOR_EMAIL:-41898283+github-actions[bot]@users.noreply.github.com}"
 
-          # The site is built directly from these committed files (both Vercel's build and this
-          # workflow's own Pages export run `bun run export` against them), so every run — 15-minute
-          # or daily — commits all of data/, not just snapshots.jsonl.
-          git add data/
-
-          if git diff --cached --quiet; then
-            echo "commit: nothing to commit"
-            exit 0
-          fi
-
-          # vercel.json's ignoreCommand skips the Vercel build for a data commit whose subject
-          # carries this marker (thins ~96/day 15-minute pushes down to roughly every 30 minutes,
-          # to stay under the Hobby plan's 100 deploys/day). The daily/backfill run always builds.
-          subject="chore(data): collect $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          if [ "$IS_BACKFILL" != "true" ] && [ $((RUN_NUMBER % 2)) -eq 1 ]; then
-            subject="$subject [vercel-skip]"
-          fi
-          git commit -m "$subject"
+          # Data commits go to the `data` branch, which Vercel ignores (vercel.json), so the
+          # 48/day pushes don't hit Vercel's GitHub fetch rate limit. main only receives a data
+          # sync a few times a day (below), and that is what triggers a Vercel deploy.
+          stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          rm -rf "$RUNNER_TEMP/data" && cp -r data "$RUNNER_TEMP/data"
 
           for attempt in 1 2 3; do
-            if git pull --rebase --autostash && git push; then
-              exit 0
+            git fetch origin main
+            if git fetch origin data; then base=FETCH_HEAD; else base=origin/main; fi
+            git checkout -f -B data "$base"
+            rm -rf data && cp -r "$RUNNER_TEMP/data" data
+            git add -A data/
+            if git diff --cached --quiet; then
+              echo "commit: nothing to commit"
+              break
             fi
-            git rebase --abort || true
+            git commit -m "chore(data): collect $stamp"
+            if git push origin data; then break; fi
             echo "commit: push attempt $attempt failed, retrying..."
             sleep $((attempt * 5))
+            if [ "$attempt" = 3 ]; then
+              echo "::error::commit: failed to push collected data after 3 attempts"
+              git checkout -f -B main origin/main
+              rm -rf data && cp -r "$RUNNER_TEMP/data" data
+              exit 1
+            fi
           done
-          echo "::error::commit: failed to push collected data after 3 attempts"
-          # Working tree may hold a locally-committed data/ that never made it to origin (and any
-          # abandoned rebase state) -- reset data/ to origin's so the build below still runs on
-          # clean, deployable data instead of a half-merged local commit.
-          git fetch origin main
-          git checkout origin/main -- data/
-          exit 1
+
+          # Back on main for the build below (and the sync), carrying this run's data.
+          git checkout -f -B main origin/main
+          rm -rf data && cp -r "$RUNNER_TEMP/data" data
+
+          # Sync data to main (-> one Vercel deploy) on the daily/backfill run and at 6-hour marks.
+          hour=$(date -u +%H); minute=$(date -u +%M)
+          if [ "$IS_BACKFILL" = "true" ] || { [ $((10#$hour % 6)) -eq 0 ] && [ $((10#$minute)) -lt 30 ]; }; then
+            git add -A data/
+            if git diff --cached --quiet; then
+              echo "sync: main already up to date"
+            else
+              git commit -m "chore(data): sync $stamp"
+              for attempt in 1 2 3; do
+                if git pull --rebase --autostash origin main && git push origin main; then break; fi
+                git rebase --abort || true
+                echo "sync: push attempt $attempt failed, retrying..."
+                sleep $((attempt * 5))
+              done
+            fi
+          fi
 
       - name: Build static export
         id: build_export

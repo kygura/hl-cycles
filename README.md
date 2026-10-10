@@ -62,7 +62,7 @@ Each source fails independently: the last-good file is kept and the error record
 
 The dashboard runs as a static site, deployed to two targets that serve the same static build:
 
-- **GitHub Pages** — deployed by `.github/workflows/collect.yml` itself, every 15 minutes (plus one daily backfill run). The workflow collects data, commits the raw `data/` files, builds the static export, and pushes it to Pages in the same run.
+- **GitHub Pages** — deployed by `.github/workflows/collect.yml` itself, every 30 minutes (plus one daily backfill run). The workflow collects data, commits the raw `data/` files, builds the static export, and pushes it to Pages in the same run.
 - **Vercel** — deployed via Vercel's Git integration on every push to `main`. The Vercel build is offline: it makes no network calls, because `bun run export` renders `frontend/dist/api/*.json` straight from the `data/` files already committed by `collect.yml`.
 
 Setup:
@@ -78,15 +78,14 @@ Setup:
    - Install Command: `bun install --frozen-lockfile` (from `vercel.json`)
    - Build Command: `VITE_STATIC=1 bun run build && bun run export` (from `vercel.json`)
    - Output Directory: `frontend/dist` (from `vercel.json`)
-   - Ignore Build Step: uses `vercel.json`'s `ignoreCommand` (see below)
 6. Deploy. The site is live at both the Pages URL and the Vercel-assigned URL (or your own domain, once attached).
 
 Notes:
-- Cron schedule drift of a few minutes at busy times is normal for GitHub Actions; don't expect an exact 15-minute cadence.
+- Cron schedule drift of a few minutes at busy times is normal for GitHub Actions; don't expect an exact 30-minute cadence.
 - GitHub auto-disables scheduled workflows on public repos after 60 days with no repo activity. If the schedule ever stops firing, re-enable it with one click from the Actions tab.
-- Every run (15-minute and daily) commits the full `data/` directory — both deployed sites are built straight from it, so it must never go stale between commits.
+- Every run (30-minute and daily) commits the full `data/` directory to the `data` branch and builds the Pages site from it. Each run starts from the `data` branch's data. Vercel builds from `main`, which gets a `chore(data): sync` commit on the daily run and at 00/06/12/18 UTC.
 - Locally, `bun run cron` runs a single collection pass (useful for testing without waiting for the schedule). `bun run dev` is unaffected by any of this.
-- Vercel would otherwise build on every push from `collect.yml` (96/day at a 15-minute cadence) plus human pushes, which risks the Hobby plan's 100 deploys/day limit. `collect.yml` appends ` [vercel-skip]` to the data commit's subject on odd `github.run_number` runs (the daily/backfill run never skips); `vercel.json`'s `ignoreCommand` skips the Vercel build (exit 0) when the last commit subject contains that marker, and always builds (exit 1) otherwise, including every human push — thinning the automated pushes down to roughly every 30 minutes.
+- Vercel ignores the `data` branch (`git.deploymentEnabled` in `vercel.json`), so the 48 data pushes/day don't each trigger a Vercel clone. That avoids GitHub's secondary rate limit (403) on Vercel's git fetch and the Hobby 100 deploys/day cap. If a Vercel deploy fails with a GitHub 403, redeploy; it is transient.
 - If a build log shows `--frozen-lockfile` rejecting the committed lockfile version, drop `--frozen-lockfile` from `installCommand` in `vercel.json` rather than pinning Bun by hand.
 - **Limited staleness alerting.** Only the Vector sources alert (a red daily run when one is >3 days stale). Nothing pages you if the schedule silently stops firing (rate limits, a broken run, the vars above going missing). Check `/api/health.json` on either deployed site for `lastRefresh`/`lastSnapshot` manually if the dashboard looks stale.
 
